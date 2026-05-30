@@ -1,0 +1,8 @@
+dataset/
+layoutlmv3-medical/
+layoutlmv3-medical-finetuned/
+runs/
+
+*.bin
+*.pt
+*.pth

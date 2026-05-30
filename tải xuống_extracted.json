@@ -1,0 +1,37 @@
+{
+    "document_type": "Đơn thuốc",
+    "entities": [
+        {
+            "field": "Tên bệnh nhân",
+            "value": "Phuong"
+        },
+        {
+            "field": "Tên bệnh nhân",
+            "value": "Ding"
+        },
+        {
+            "field": "Liều lượng",
+            "value": "Ec"
+        },
+        {
+            "field": "Liều lượng",
+            "value": "Fone {Oque 12\" '82 :an Poilam ! vur {am ar"
+        },
+        {
+            "field": "Liều lượng",
+            "value": "14 Ver"
+        },
+        {
+            "field": "Liều lượng",
+            "value": "10 v162"
+        },
+        {
+            "field": "Chẩn đoán",
+            "value": null
+        },
+        {
+            "field": "Tên thuốc",
+            "value": null
+        }
+    ]
+}

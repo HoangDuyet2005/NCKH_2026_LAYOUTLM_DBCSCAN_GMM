@@ -1,0 +1,67 @@
+{
+    "document_type": "KQ xét nghiệm",
+    "entities": [
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "24 U/L",
+            "Z_Score_Normalized": -1.067
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "28 U/L",
+            "Z_Score_Normalized": -0.8
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "68 U/L",
+            "Z_Score_Normalized": 1.867
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "112 U/L",
+            "Z_Score_Normalized": 4.8
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "9 U/L",
+            "Z_Score_Normalized": -2.067
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "256 UIL",
+            "Z_Score_Normalized": 14.4
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "18 UIL",
+            "Z_Score_Normalized": -1.467
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "28 g/L",
+            "Z_Score_Normalized": -0.4
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "8120 U/L",
+            "Z_Score_Normalized": 538.667
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "1,57"
+        },
+        {
+            "field": "Kết quả xét nghiệm",
+            "value": "64 UIL",
+            "Z_Score_Normalized": 1.6
+        },
+        {
+            "field": "Tên bệnh nhân",
+            "value": null
+        },
+        {
+            "field": "Chẩn đoán",
+            "value": null
+        }
+    ]
+}
