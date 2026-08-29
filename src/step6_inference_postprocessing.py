@@ -78,54 +78,8 @@ def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = No
     final_ocr.sort(key=lambda item: (item["cluster_id"], item["bbox"][0]))
     
     # ---------------------------------------------------------
-    # 2. GMM Routing (Định tuyến tự động chuẩn kiến trúc hệ thống)
+    # 2. Khởi tạo mô hình LayoutLMv3 và Trích xuất Page-level Embedding [CLS]
     # ---------------------------------------------------------
-    print("2. Chạy GMM Routing (Định tuyến bằng Gaussian Mixture Model)...")
-    
-    class_mapping = {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"}
-    document_type = "Đơn thuốc" # Mặc định dự phòng
-    
-    # Chuẩn hóa đặc trưng không gian (Spatial Features) từ DBSCAN để nạp cho GMM
-    spatial_data = np.array(centers)
-    
-    if os.path.exists(gmm_path):
-        try:
-            gmm = joblib.load(gmm_path)
-            # Dự đoán dựa trên phân phối trọng tâm mật độ của trang
-            probs = gmm.predict_proba(spatial_data)
-            mean_probs = np.mean(probs, axis=0)
-            predicted_class = int(np.argmax(mean_probs))
-            document_type = class_mapping.get(predicted_class, "Đơn thuốc")
-        except Exception as e:
-            print(f"Lỗi load GMM thực tế: {e}. Kích hoạt GMM Fallback Engine...")
-            # Fallback toán học: Khởi tạo mô hình hỗn hợp cấu trúc Gaussian động cho tài liệu hiện tại
-            gmm_fallback = GaussianMixture(n_components=min(3, len(spatial_data)), random_state=42)
-            gmm_fallback.fit(spatial_data)
-            # Phân tích heuristics toán học dựa trên số lượng thành phần cụm để gán nhãn động
-            full_text_lower = " ".join([item["text"].lower() for item in final_ocr])
-            if any(kw in full_text_lower for kw in ["xét nghiệm", "u/l", "g/l", "mmol"]):
-                document_type = "KQ xét nghiệm"
-            elif any(kw in full_text_lower for kw in ["bệnh án", "tiền sử", "vào viện"]):
-                document_type = "Hồ sơ bệnh án"
-    else:
-        print("-> Không thấy file cấu hình gmm_router.pkl. Tự động dựng phân lớp toán học GMM trực tiếp...")
-        # Sử dụng thuật toán GMM Fit trực tiếp đặc trưng hình học để nhận diện cấu trúc
-        gmm_direct = GaussianMixture(n_components=1, random_state=42)
-        gmm_direct.fit(spatial_data)
-        
-        # Kết hợp phân tích mật độ phân phối dòng để ánh xạ nhãn động một cách chuẩn chỉ
-        full_text_lower = " ".join([item["text"].lower() for item in final_ocr])
-        if any(kw in full_text_lower for kw in ["xét nghiệm", "u/l", "uil", "g/l", "mmol"]):
-            document_type = "KQ xét nghiệm"
-        elif any(kw in full_text_lower for kw in ["bệnh án", "tiền sử", "vào viện", "ra viện"]):
-            document_type = "Hồ sơ bệnh án"
-            
-    print(f"-> Phân loại tài liệu động qua GMM: {document_type}")
-    
-    # ---------------------------------------------------------
-    # 3. LayoutLMv3 Inference (Sửa lỗi tràn bộ nhớ và bảo toàn chữ dài)
-    # ---------------------------------------------------------
-    print("3. Trích xuất thực thể với LayoutLMv3...")
     image = Image.open(img_path).convert("RGB")
     width, height = image.size
     
@@ -138,7 +92,50 @@ def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = No
         
     model.to(device)
     model.eval()
+
+    # ---------------------------------------------------------
+    # 3. GMM Routing (Định tuyến tự động chuẩn kiến trúc: LayoutLMv3 [CLS] 768-D -> GMM)
+    # ---------------------------------------------------------
+    print("2. Chạy GMM Routing (Định tuyến phân loại bằng Gaussian Mixture Model)...")
+    document_type = "Đơn thuốc" # Mặc định dự phòng
+
+    try:
+        # Chuẩn bị toàn bộ text và bboxes để trích xuất đặc trưng trang
+        all_words = [item["text"] for item in final_ocr]
+        all_bboxes = [normalize_bbox(item["bbox"], width, height) for item in final_ocr]
+        
+        page_enc = processor(image, all_words, boxes=all_bboxes, return_tensors="pt", truncation=True, padding="max_length", max_length=512)
+        page_enc = {k: v.to(device) for k, v in page_enc.items()}
+        
+        with torch.no_grad():
+            base_output = model.layoutlmv3(**page_enc)
+            # Lấy vector [CLS] 768 chiều đại diện cho toàn bộ trang
+            cls_embedding = base_output.last_hidden_state[0, 0, :].cpu().numpy().reshape(1, -1)
+            
+        if os.path.exists(gmm_path):
+            router_data = joblib.load(gmm_path)
+            if isinstance(router_data, dict):
+                gmm_model = router_data["gmm"]
+                c2l = router_data.get("cluster_to_label", {})
+                class_mapping = router_data.get("class_mapping", {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"})
+                pred_cluster = int(gmm_model.predict(cls_embedding)[0])
+                pred_label_id = c2l.get(pred_cluster, pred_cluster)
+                document_type = class_mapping.get(pred_label_id, "Đơn thuốc")
+            else:
+                # Nếu là đối tượng GMM thuần (n_features = 768)
+                pred_cluster = int(router_data.predict(cls_embedding)[0])
+                document_type = {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"}.get(pred_cluster, "Đơn thuốc")
+        else:
+            print("-> Chưa có file gmm_router.pkl, dùng phân loại mặc định.")
+    except Exception as e:
+        print(f"Lỗi khi chạy GMM Router: {e}")
+        
+    print(f"-> Phân loại tài liệu chuẩn GMM: {document_type}")
     
+    # ---------------------------------------------------------
+    # 4. LayoutLMv3 Token Classification (Trích xuất thực thể theo Chunks)
+    # ---------------------------------------------------------
+    print("3. Trích xuất thực thể với LayoutLMv3...")
     id2label = model.config.id2label
     raw_entities = []
     current_entity = None

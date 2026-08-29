@@ -7,6 +7,7 @@ from PIL import Image
 from transformers import LayoutLMv3FeatureExtractor, LayoutLMv3Model, LayoutLMv3Processor
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import classification_report, confusion_matrix
+import joblib
 from pathlib import Path
 from tqdm import tqdm
 
@@ -114,10 +115,16 @@ def train_and_evaluate_gmm(dataset_dir: str):
     print("\n--- Confusion Matrix ---")
     print(confusion_matrix(y_true, y_pred_mapped))
 
-    # Lưu mô hình GMM đã huấn luyện để Step 6 có thể load trực tiếp
+    # Lưu mô hình GMM đã huấn luyện cùng bảng ánh xạ nhãn để Step 6 nạp và định tuyến chuẩn xác
     gmm_save_path = str(PROJECT_ROOT / "gmm_router.pkl")
-    joblib.dump(gmm, gmm_save_path)
-    print(f"\nĐã lưu mô hình GMM tại: {gmm_save_path}")
+    router_data = {
+        "gmm": gmm,
+        "cluster_to_label": cluster_to_label,
+        "target_names": target_names,
+        "class_mapping": {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"}
+    }
+    joblib.dump(router_data, gmm_save_path)
+    print(f"\nĐã lưu mô hình GMM định tuyến tại: {gmm_save_path}")
 
 if __name__ == "__main__":
     DATASET_DIR = str(PROJECT_ROOT / "dataset")

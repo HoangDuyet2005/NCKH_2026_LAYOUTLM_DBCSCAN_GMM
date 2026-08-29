@@ -12,6 +12,7 @@ runs/
 *.bin
 *.pt
 *.pth
+*.pkl
 *.rar
 *.zip
 
