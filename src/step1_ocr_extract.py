@@ -5,6 +5,9 @@ import easyocr
 from pathlib import Path
 from tqdm import tqdm
 
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 def process_images_with_easyocr(dataset_dir: str):
     """
     Quét thư mục dataset và trích xuất OCR cho từng ảnh,
@@ -50,6 +53,6 @@ def process_images_with_easyocr(dataset_dir: str):
             print(f"Lỗi khi xử lý ảnh {img_path}: {e}")
 
 if __name__ == "__main__":
-    DATASET_DIR = "dataset" # Thư mục gốc chứa 3 thư mục con
+    DATASET_DIR = str(PROJECT_ROOT / "dataset")  # Thư mục gốc chứa 3 thư mục con
     process_images_with_easyocr(DATASET_DIR)
     print("Hoàn tất bước 1: Trích xuất OCR.")

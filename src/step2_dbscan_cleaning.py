@@ -6,6 +6,9 @@ from sklearn.cluster import DBSCAN
 from pathlib import Path
 from tqdm import tqdm
 
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 def clean_ocr_with_dbscan(json_path: str, eps: float = 15.0, min_samples: int = 1):
     """
     Đọc file JSON chứa kết quả OCR, tính toán tọa độ trọng tâm (center_x, center_y),
@@ -64,6 +67,6 @@ def process_all_jsons(dataset_dir: str):
         clean_ocr_with_dbscan(json_path)
 
 if __name__ == "__main__":
-    DATASET_DIR = "dataset"
+    DATASET_DIR = str(PROJECT_ROOT / "dataset")
     process_all_jsons(DATASET_DIR)
     print("Hoàn tất bước 2: Làm sạch và gom dòng với DBSCAN.")

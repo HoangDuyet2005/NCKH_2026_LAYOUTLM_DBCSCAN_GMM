@@ -51,20 +51,20 @@ cd NCKH_2026_LAYOUTLM_DBCSCAN_GMM
 # Cài đặt PyTorch với hỗ trợ GPU CUDA (Khuyên dùng để train nhanh)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-# Cài đặt các thư viện bổ trợ khác
-pip install transformers datasets evaluate seqeval scikit-learn numpy pillow matplotlib tqdm easyocr accelerate
+# Cài đặt toàn bộ thư viện từ requirements.txt
+pip install -r requirements.txt
 ```
 
 ### 4. Chuẩn bị tập dữ liệu (Dataset)
 Vì dữ liệu hình ảnh nặng không được đẩy lên GitHub (do cấu hình `.gitignore`), bạn cần tự tạo cấu trúc thư mục và đặt các ảnh của bạn vào:
 1.  Tạo thư mục tên `dataset/` ở thư mục gốc của dự án.
 2.  Bên trong `dataset/`, tạo 3 thư mục con tương ứng: `Don_thuoc`, `Phieu_xet_nghiem`, `Ho_so_benh_an`.
-3.  Bỏ các ảnh y tế tương ứng của bạn vào các thư mục con này để bắt đầu chạy từ `step1_ocr_extract.py`.
+3.  Bỏ các ảnh y tế tương ứng của bạn vào các thư mục con này để bắt đầu chạy từ `src/step1_ocr_extract.py`.
 
 ### 5. Chạy nhanh trích xuất trên ảnh có sẵn (Inference)
-Nếu bạn đã có mô hình đã được huấn luyện nằm ở thư mục `layoutlmv3-medical-finetuned/`, chỉ cần bỏ ảnh cần trích xuất (ví dụ `test.png`) vào thư mục gốc, thay đổi biến `TEST_IMAGE_PATH = "test.png"` ở cuối file `step6_inference_postprocessing.py` và chạy:
+Nếu bạn đã có mô hình đã được huấn luyện nằm ở thư mục `layoutlmv3-medical-finetuned/`, chỉ cần bỏ ảnh cần trích xuất (ví dụ `test.png`) vào thư mục `assets/`, thay đổi biến `TEST_IMAGE_PATH` ở cuối file `src/step6_inference_postprocessing.py` và chạy:
 ```bash
-python step6_inference_postprocessing.py
+python src/step6_inference_postprocessing.py
 ```
 
 ---
@@ -77,77 +77,99 @@ Dự án yêu cầu cài đặt Python 3.10 trở lên và cài đặt các thư
 Chạy lệnh sau bằng Python hệ thống để cài đặt toàn bộ các thư viện cần thiết:
 ```powershell
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install transformers datasets evaluate seqeval scikit-learn numpy pillow matplotlib tqdm easyocr accelerate
+pip install -r requirements.txt
 ```
 
 ### 2. Cấu trúc thư mục dự án
 ```text
 NCKH_Model/
-├── dataset/                     # Thư mục chứa tập dữ liệu ảnh chia làm 3 loại
+├── src/                                 # Toàn bộ mã nguồn Python
+│   ├── step1_ocr_extract.py             # Trích xuất OCR tiếng Việt bằng EasyOCR
+│   ├── step2_dbscan_cleaning.py         # Làm sạch nhiễu và sắp xếp dòng bằng DBSCAN
+│   ├── step3_gmm_routing.py             # Định tuyến loại tài liệu bằng GMM & LayoutLMv3 [CLS]
+│   ├── step4_prepare_label_studio.py    # Tạo dữ liệu định dạng Label Studio
+│   ├── step4b_label_studio_to_training.py # Ánh xạ nhãn gán thành cấu trúc BIO
+│   ├── step5_layoutlmv3_finetune.py     # Huấn luyện (Fine-tune) mô hình LayoutLMv3
+│   ├── step6_inference_postprocessing.py # Pipeline dự đoán ảnh mới & Hậu xử lý trích xuất
+│   ├── check_export.py                  # Kiểm tra file export Label Studio
+│   ├── cors_server.py                   # HTTP Server hỗ trợ CORS cho Label Studio
+│   └── plot_metrics.py                  # Vẽ biểu đồ kết quả huấn luyện
+├── data/                                # Dữ liệu JSON nhãn
+│   ├── label_studio_export.json         # File nhãn xuất ra từ Label Studio
+│   ├── label_studio_import.json         # File nhãn chuẩn bị để import vào Label Studio
+│   └── training_data.json               # File dữ liệu chuẩn hóa dạng BIO để training
+├── assets/                              # Ảnh minh họa / demo
+│   └── training_progress.png            # Biểu đồ đánh giá kết quả huấn luyện mô hình
+├── dataset/                             # [.gitignore] Tập dữ liệu ảnh gốc chia 3 loại
 │   ├── Don_thuoc/
 │   ├── Phieu_xet_nghiem/
 │   └── Ho_so_benh_an/
-├── layoutlmv3-medical-finetuned/# Thư mục lưu mô hình LayoutLMv3 sau khi huấn luyện tối ưu
-├── label_studio_export.json    # File nhãn xuất ra từ Label Studio
-├── label_studio_import.json    # File nhãn chuẩn bị để import vào Label Studio
-├── training_data.json          # File dữ liệu chuẩn hóa dạng PyTorch để training
-├── training_progress.png       # Biểu đồ đánh giá kết quả huấn luyện mô hình
-├── plot_metrics.py             # Script tự động trích xuất & vẽ biểu đồ kết quả training
-├── step1_ocr_extract.py        # Trích xuất OCR tiếng Việt bằng EasyOCR
-├── step2_dbscan_cleaning.py    # Làm sạch nhiễu và sắp xếp dòng bằng DBSCAN
-├── step3_gmm_routing.py        # Định tuyến loại tài liệu bằng GMM & LayoutLMv3 [CLS]
-├── step4_prepare_label_studio.py  # Tạo dữ liệu định dạng Label Studio
-├── step4b_label_studio_to_training.py # Ánh xạ nhãn gán thành cấu trúc BIO
-├── step5_layoutlmv3_finetune.py   # Huấn luyện (Fine-tune) mô hình LayoutLMv3
-└── step6_inference_postprocessing.py  # Pipeline dự đoán ảnh mới & Hậu xử lý trích xuất
+├── layoutlmv3-medical-finetuned/        # [.gitignore] Mô hình LayoutLMv3 đã finetune
+├── .gitignore
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
 ## 🚀 Hướng Dẫn Vận Hành Chi Tiết (Step-by-Step Guide)
 
+> **Lưu ý:** Tất cả các lệnh đều chạy từ thư mục gốc (root) của dự án.
+
 ### Bước 1: Trích xuất OCR bằng EasyOCR
 Mô hình sẽ quét thư mục `dataset`, nhận diện chữ tiếng Việt và tọa độ Bounding Box, sau đó lưu thành các file `.json` đi kèm cùng cấp với mỗi ảnh.
 ```powershell
-python step1_ocr_extract.py
+python src/step1_ocr_extract.py
 ```
 
 ### Bước 2: Sắp xếp dòng & Làm sạch bằng DBSCAN
 Do tọa độ OCR của EasyOCR thường bị xô lệch và trả về dạng các từ đơn lẻ, thuật toán **DBSCAN** sẽ gom cụm các từ trên cùng một dòng vật lý và sắp xếp chúng từ trái sang phải, đồng thời loại bỏ các điểm nhiễu ngoại lai.
 ```powershell
-python step2_dbscan_cleaning.py
+python src/step2_dbscan_cleaning.py
 ```
 
 ### Bước 3: Định tuyến phân loại tài liệu (GMM + LayoutLMv3 Embeddings)
 Sử dụng mô hình LayoutLMv3 pretrained để trích xuất Page-level Embedding (vector `[CLS]`), sau đó dùng thuật toán phân cụm hỗn hợp Gaussian (**Gaussian Mixture Model - GMM**) để tự động phân loại tài liệu thành 3 nhóm chính: Đơn thuốc, Phiếu xét nghiệm, Hồ sơ bệnh án.
 ```powershell
-python step3_gmm_routing.py
+python src/step3_gmm_routing.py
 ```
 
 ### Bước 4: Chuẩn bị dữ liệu và Gán nhãn thủ công (Label Studio)
 Tạo file nhập liệu cho Label Studio đã được điền sẵn kết quả OCR sạch:
 ```powershell
-python step4_prepare_label_studio.py
+python src/step4_prepare_label_studio.py
 ```
-*   **Hướng dẫn gán nhãn:** Import file `label_studio_import.json` vào công cụ [Label Studio](http://localhost:8080). Tiến hành quét vùng và gán nhãn thực thể y tế theo 5 nhóm nhãn đích: `Patient_Name`, `Diagnosis`, `Medication`, `Dosage`, `Lab_Value`. Sau đó export kết quả định dạng JSON lưu vào dự án với tên **`label_studio_export.json`**.
+*   **Hướng dẫn gán nhãn:** Import file `data/label_studio_import.json` vào công cụ [Label Studio](http://localhost:8080). Tiến hành quét vùng và gán nhãn thực thể y tế theo 5 nhóm nhãn đích: `Patient_Name`, `Diagnosis`, `Medication`, `Dosage`, `Lab_Value`. Sau đó export kết quả định dạng JSON lưu vào dự án với tên **`data/label_studio_export.json`**.
 
 ### Bước 4b: Chuyển đổi dữ liệu nhãn thành cấu trúc BIO
 Ánh xạ tọa độ gán nhãn thủ công từ phần trăm sang hệ tọa độ pixel của OCR, chuẩn hóa về khoảng `[0, 1000]` và gán nhãn định dạng BIO (B-Entity, I-Entity, O) cho từng từ:
 ```powershell
-python step4b_label_studio_to_training.py
+python src/step4b_label_studio_to_training.py
 ```
 
 ### Bước 5: Huấn luyện (Fine-tune) LayoutLMv3
 Huấn luyện mô hình Transformer đa phương thức (Multimodal) kết hợp thông tin văn bản, bố cục không gian (Bounding Box) và hình ảnh gốc của tài liệu:
 ```powershell
-python step5_layoutlmv3_finetune.py
+python src/step5_layoutlmv3_finetune.py
 ```
 
 ### Bước 6: Chạy thử nghiệm dự đoán End-to-End & Hậu xử lý trích xuất
 Quét một ảnh đơn thuốc/bệnh án mới, chạy qua toàn bộ pipeline tự động (OCR -> DBSCAN -> GMM -> LayoutLMv3). Thuật toán hậu xử lý heuristics sẽ ghép các từ đơn lẻ có nhãn BIO liền kề nhau thành cụm từ hoàn chỉnh và xuất ra file kết quả JSON cấu trúc:
 ```powershell
-python step6_inference_postprocessing.py
+python src/step6_inference_postprocessing.py
 ```
+
+---
+
+## 🖼️ Minh Họa Dữ Liệu & Kết Quả Huấn Luyện (Demo & Training Progress)
+
+### 1. Dữ Liệu Mẫu Bệnh Án & Phiếu Xét Nghiệm
+| Đơn Thuốc Mẫu | Phiếu Xét Nghiệm Mẫu |
+|:---:|:---:|
+| ![Mẫu Đơn Thuốc](assets/tải_xuống.jpg) | ![Mẫu Phiếu Xét Nghiệm](assets/c1907f5d-508c-446d-9974-bf304365b36c.png) |
+
+### 2. Biểu Đồ Đánh Giá Quá Trình Huấn Luyện (Training & Validation Curves)
+![Biểu Đồ Huấn Luyện LayoutLMv3](assets/training_progress.png)
 
 ---
 
@@ -170,11 +192,11 @@ Hệ thống đã được huấn luyện tối ưu qua 1000 bước (111 Epochs
 
 *   **Chỉ số tối ưu nhất:** Đạt được ở **Step 500** với điểm **F1-Score đạt 72.00%** (Precision: **77.59%**, Recall: **67.16%**, Accuracy: **95.81%**).
 *   Mô hình ở bước tốt nhất (Step 500) đã tự động được trích xuất và đóng gói làm trọng số dự đoán chính của pipeline tại `./layoutlmv3-medical-finetuned`.
-*   Biểu đồ chi tiết đường cong học tập (Learning Curves) được lưu trữ tại file ảnh **`training_progress.png`** trong thư mục gốc.
+*   Biểu đồ chi tiết đường cong học tập (Learning Curves) được lưu trữ tại file ảnh **`assets/training_progress.png`** trong thư mục assets.
 
 Để vẽ lại biểu đồ hoặc cập nhật bảng thông số mới khi huấn luyện lại, hãy chạy:
 ```powershell
-python plot_metrics.py
+python src/plot_metrics.py
 ```
 
 ---

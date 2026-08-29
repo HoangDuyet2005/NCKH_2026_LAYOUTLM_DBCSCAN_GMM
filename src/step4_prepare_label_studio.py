@@ -1,14 +1,22 @@
 import os
 import glob
 import json
+import time
 from PIL import Image
+from pathlib import Path
 from tqdm import tqdm
 
-def prepare_label_studio_format(dataset_dir: str, output_file: str = "label_studio_import.json"):
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def prepare_label_studio_format(dataset_dir: str, output_file: str = None):
     """
     Chuyển đổi dữ liệu JSON OCR đã làm sạch thành định dạng chuẩn của Label Studio.
     BBox được chuẩn hóa theo tỷ lệ phần trăm (0-100) để hiển thị trên Label Studio.
     """
+    if output_file is None:
+        output_file = str(PROJECT_ROOT / "data" / "label_studio_import.json")
+
     image_paths = []
     for ext in ['*.jpg', '*.jpeg', '*.png']:
         image_paths.extend(glob.glob(os.path.join(dataset_dir, '**', ext), recursive=True))
@@ -35,7 +43,6 @@ def prepare_label_studio_format(dataset_dir: str, output_file: str = "label_stud
             # Giả lập đường dẫn web (URL) cho ảnh (Label Studio cần URL hoặc local path hợp lệ)
             # Dùng Python HTTP Server ở cổng 8081 để host ảnh thay vì phụ thuộc vào tính năng bảo mật của Label Studio
             rel_img_path = img_path.replace("\\", "/")
-            import time
             image_url = f"http://localhost:8081/{rel_img_path}?t={int(time.time())}"
             
             results = []
@@ -88,6 +95,6 @@ def prepare_label_studio_format(dataset_dir: str, output_file: str = "label_stud
     print(f"\nĐã lưu file dữ liệu Label Studio tại: {output_file}")
 
 if __name__ == "__main__":
-    DATASET_DIR = "dataset"
+    DATASET_DIR = str(PROJECT_ROOT / "dataset")
     prepare_label_studio_format(DATASET_DIR)
     print("Hoàn tất bước 4: Chuẩn bị dữ liệu cho Label Studio.")

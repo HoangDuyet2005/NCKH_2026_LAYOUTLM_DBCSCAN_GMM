@@ -7,7 +7,11 @@ from PIL import Image
 from transformers import LayoutLMv3FeatureExtractor, LayoutLMv3Model, LayoutLMv3Processor
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import classification_report, confusion_matrix
+from pathlib import Path
 from tqdm import tqdm
+
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def normalize_bbox(bbox, width, height):
     """ Chuẩn hóa bounding box về tỷ lệ [0, 1000] cho LayoutLMv3 """
@@ -110,7 +114,12 @@ def train_and_evaluate_gmm(dataset_dir: str):
     print("\n--- Confusion Matrix ---")
     print(confusion_matrix(y_true, y_pred_mapped))
 
+    # Lưu mô hình GMM đã huấn luyện để Step 6 có thể load trực tiếp
+    gmm_save_path = str(PROJECT_ROOT / "gmm_router.pkl")
+    joblib.dump(gmm, gmm_save_path)
+    print(f"\nĐã lưu mô hình GMM tại: {gmm_save_path}")
+
 if __name__ == "__main__":
-    DATASET_DIR = "dataset"
+    DATASET_DIR = str(PROJECT_ROOT / "dataset")
     train_and_evaluate_gmm(DATASET_DIR)
     print("Hoàn tất bước 3: Định tuyến phân loại tài liệu với GMM.")

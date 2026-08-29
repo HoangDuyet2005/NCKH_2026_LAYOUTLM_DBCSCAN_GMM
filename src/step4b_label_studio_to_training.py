@@ -2,7 +2,11 @@ import os
 import json
 import glob
 from PIL import Image
+from pathlib import Path
 from tqdm import tqdm
+
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Định nghĩa hệ nhãn BIO
 LABELS = [
@@ -30,7 +34,7 @@ def normalize_bbox(bbox, width, height):
 def convert_label_studio_export(
     export_json_path: str,
     dataset_dir: str,
-    output_json_path: str = "training_data.json"
+    output_json_path: str = None
 ):
     """
     Đọc file JSON xuất từ Label Studio và chuyển đổi sang định dạng
@@ -57,6 +61,9 @@ def convert_label_studio_export(
       ...
     ]
     """
+    if output_json_path is None:
+        output_json_path = str(PROJECT_ROOT / "data" / "training_data.json")
+
     print(f"Đang đọc file export của Label Studio: {export_json_path}")
     with open(export_json_path, 'r', encoding='utf-8') as f:
         ls_data = json.load(f)
@@ -207,18 +214,18 @@ def convert_label_studio_export(
 if __name__ == "__main__":
     # Đường dẫn tới file export từ Label Studio
     # (Sau khi gán nhãn xong, Export → JSON format)
-    LABEL_STUDIO_EXPORT = "label_studio_export.json"
-    DATASET_DIR = "dataset"
-    OUTPUT_FILE = "training_data.json"
+    LABEL_STUDIO_EXPORT = str(PROJECT_ROOT / "data" / "label_studio_export.json")
+    DATASET_DIR = str(PROJECT_ROOT / "dataset")
+    OUTPUT_FILE = str(PROJECT_ROOT / "data" / "training_data.json")
 
     if not os.path.exists(LABEL_STUDIO_EXPORT):
         print(
             f"[LỖI] Chưa tìm thấy file '{LABEL_STUDIO_EXPORT}'.\n"
             "Hướng dẫn:\n"
             "  1. Mở Label Studio tại http://localhost:8080\n"
-            "  2. Import file 'label_studio_import.json'\n"
+            "  2. Import file 'data/label_studio_import.json'\n"
             "  3. Gán nhãn BIO cho từng ảnh\n"
-            "  4. Export → JSON format → lưu thành 'label_studio_export.json'\n"
+            "  4. Export → JSON format → lưu thành 'data/label_studio_export.json'\n"
             "  5. Chạy lại script này"
         )
     else:

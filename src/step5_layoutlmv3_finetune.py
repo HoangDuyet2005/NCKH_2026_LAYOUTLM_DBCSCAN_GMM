@@ -12,7 +12,11 @@ from transformers import (
     Trainer
 )
 from transformers.data.data_collator import default_data_collator
+from pathlib import Path
 import numpy as np
+
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 # Định nghĩa hệ nhãn theo yêu cầu (BIO Format)
 LABELS = [
@@ -37,10 +41,13 @@ def normalize_bbox(bbox, width, height):
         max(0, min(1000, int(1000 * (y_max / height))))
     ]
 
-def load_data_from_json(json_file: str = "training_data.json"):
+def load_data_from_json(json_file: str = None):
     """
     Tải dữ liệu huấn luyện đã được tạo ra từ bước 4b (training_data.json).
     """
+    if json_file is None:
+        json_file = str(PROJECT_ROOT / "data" / "training_data.json")
+
     if not os.path.exists(json_file):
         print(f"[LỖI] Không tìm thấy file {json_file}. Vui lòng chạy bước 4b trước.")
         return []
@@ -94,7 +101,8 @@ def encode_dataset(examples):
     return encoding
 
 def finetune_layoutlmv3():
-    data_list = load_data_from_json("training_data.json")
+    training_data_path = str(PROJECT_ROOT / "data" / "training_data.json")
+    data_list = load_data_from_json(training_data_path)
     if not data_list:
         print("Không có dữ liệu để huấn luyện.")
         return
@@ -147,8 +155,11 @@ def finetune_layoutlmv3():
         num_labels=len(LABELS)
     )
 
+    output_dir = str(PROJECT_ROOT / "layoutlmv3-medical")
+    finetuned_dir = str(PROJECT_ROOT / "layoutlmv3-medical-finetuned")
+
     training_args = TrainingArguments(
-        output_dir="./layoutlmv3-medical",
+        output_dir=output_dir,
         max_steps=1000,
         per_device_train_batch_size=4, # Batch size = 4
         per_device_eval_batch_size=4,
@@ -174,8 +185,8 @@ def finetune_layoutlmv3():
     trainer.train()
     
     # Lưu mô hình
-    model.save_pretrained("./layoutlmv3-medical-finetuned")
-    processor.save_pretrained("./layoutlmv3-medical-finetuned")
+    model.save_pretrained(finetuned_dir)
+    processor.save_pretrained(finetuned_dir)
     print("Huấn luyện hoàn tất và mô hình đã được lưu.")
 
 if __name__ == "__main__":

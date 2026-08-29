@@ -1,8 +1,21 @@
+# Python & Virtual environment
+__pycache__/
+*.py[cod]
+venv/
+.env
+
+# Datasets & Weights (Files quá nặng)
 dataset/
 layoutlmv3-medical/
 layoutlmv3-medical-finetuned/
 runs/
-
 *.bin
 *.pt
 *.pth
+*.rar
+*.zip
+
+# System
+.DS_Store
+.vscode/
+.idea/

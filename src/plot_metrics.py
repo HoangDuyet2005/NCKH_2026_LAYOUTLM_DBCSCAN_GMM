@@ -1,9 +1,13 @@
 import os
 import json
 import matplotlib.pyplot as plt
+from pathlib import Path
+
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def main():
-    state_path = os.path.join("layoutlmv3-medical", "checkpoint-1000", "trainer_state.json")
+    state_path = str(PROJECT_ROOT / "layoutlmv3-medical" / "checkpoint-1000" / "trainer_state.json")
     if not os.path.exists(state_path):
         print(f"Error: Could not find {state_path}")
         return
@@ -88,7 +92,7 @@ def main():
     ax2.legend(fontsize=10, loc="lower right")
 
     plt.tight_layout()
-    chart_output = "training_progress.png"
+    chart_output = str(PROJECT_ROOT / "assets" / "training_progress.png")
     plt.savefig(chart_output, dpi=300)
     print(f"\n[THÀNH CÔNG] Đã lưu biểu đồ kết quả huấn luyện tại: {os.path.abspath(chart_output)}")
 

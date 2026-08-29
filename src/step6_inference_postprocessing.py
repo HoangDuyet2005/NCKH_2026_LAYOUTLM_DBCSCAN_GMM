@@ -5,10 +5,14 @@ import torch
 import joblib
 import numpy as np
 from PIL import Image
+from pathlib import Path
 import easyocr
 from sklearn.cluster import DBSCAN
 from sklearn.mixture import GaussianMixture
 from transformers import LayoutLMv3Processor, LayoutLMv3ForTokenClassification
+
+# Xác định thư mục gốc dự án (thư mục cha của src/)
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def normalize_bbox(bbox, width, height):
     x_min, y_min, x_max, y_max = bbox
@@ -23,7 +27,12 @@ def clean_text(text: str) -> str:
     """ Dùng Regex làm sạch các ký tự rác ở đầu/cuối chuỗi """
     return re.sub(r'^[\s|\-_,]+|[\s|\-_,]+$', '', text)
 
-def inference_pipeline(img_path: str, model_path: str = "./layoutlmv3-medical-finetuned", gmm_path: str = "./gmm_router.pkl"):
+def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = None):
+    if model_path is None:
+        model_path = str(PROJECT_ROOT / "layoutlmv3-medical-finetuned")
+    if gmm_path is None:
+        gmm_path = str(PROJECT_ROOT / "gmm_router.pkl")
+
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
         
@@ -290,7 +299,7 @@ def inference_pipeline(img_path: str, model_path: str = "./layoutlmv3-medical-fi
     return result_json
 
 if __name__ == "__main__":
-    TEST_IMAGE_PATH = "tải xuống.jpg"
+    TEST_IMAGE_PATH = str(PROJECT_ROOT / "assets" / "tải_xuống.jpg")
     if os.path.exists(TEST_IMAGE_PATH):
         inference_pipeline(TEST_IMAGE_PATH)
     else:
