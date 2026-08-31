@@ -218,39 +218,37 @@ Vì tập gán nhãn chỉ có **45 tài liệu**, một lần chia train/test c
 
 | Loại thực thể | Baseline rule-based | LayoutLMv3, 1 lần chia (9 mẫu) | LayoutLMv3, **5-Fold out-of-fold (45 mẫu)** | Support (OOF) |
 |:---|:---:|:---:|:---:|:---:|
-| Lab_Value | 12.1% | 88.9% | **97.9%** | 145 |
+| Lab_Value | 12.1% | 100.0% | **97.9%** | 145 |
 | Medication | 0.0% | 80.0% | **76.9%** | 38 |
-| Diagnosis | 0.0% | 58.8% | **63.7%** | 74 |
-| Patient_Name | 21.1% | 82.4% | **62.5%** | 48 |
-| Dosage | 0.0% | 26.7% | **44.8%** | 82 |
-| **Micro avg (tổng)** | **11.3%** | **72.0%** | **73.6%** | 387 |
+| Diagnosis | 0.0% | 66.7% | **63.7%** | 74 |
+| Patient_Name | 21.1% | 70.0% | **62.5%** | 48 |
+| Dosage | 0.0% | 30.8% | **44.8%** | 82 |
+| **Micro avg (tổng)** | **11.3%** | **79.4%** | **73.6%** | 387 |
 
 **Nhận định:**
-*   F1 trung bình 5 fold (72.87%) và F1 out-of-fold (73.6%) đều rất khớp với con số 72.00% của lần chia đơn ban đầu — bằng chứng thống kê cho thấy con số này **không phải may rủi của 1 lần chia**, dù độ lệch chuẩn ±4.75% cho thấy vẫn còn dao động do dữ liệu nhỏ.
-*   Mô hình vượt baseline rule-based rõ rệt trên mọi loại thực thể (73.6% vs 11.3% F1 tổng) — việc fine-tune một mô hình đa phương thức thực sự cần thiết so với cách tiếp cận rule-based.
-*   So sánh cột "1 lần chia" và "out-of-fold" cho thấy lý do nên nghi ngờ số liệu đo trên tập nhỏ: `Patient_Name` trông rất tốt (82.4%) khi chỉ đo trên 10 thực thể, nhưng rơi xuống 62.5% khi đo trên 48 thực thể (out-of-fold) — con số ban đầu chỉ là may mắn trên vài mẫu test. Ngược lại `Dosage` trông rất tệ (26.7%, support 5) nhưng thực ra khá hơn (44.8%, support 82) khi đo trên nhiều thực thể hơn.
-*   **`Dosage` là loại thực thể yếu nhất một cách nhất quán ở cả 2 cách đo** — hướng cải thiện cụ thể, đáng ưu tiên nhất khi có thêm dữ liệu gán nhãn.
+*   F1 trung bình 5 fold (72.87%) và F1 out-of-fold (73.6%) đều gần với con số 79.4% của lần chia đơn (checkpoint triển khai chính thức) nhưng **thấp hơn khoảng 6-7 điểm** — đây chính là bằng chứng cụ thể cho lý do phải dùng K-Fold CV thay vì tin vào 1 lần chia: dù dùng đúng config đã regularize, 1 lần chia 9 mẫu vẫn có thể "may mắn" hơn ước lượng trung bình thật sự trên toàn bộ dữ liệu. **Con số 72.87% (± 4.75%) / 73.6% out-of-fold mới là ước lượng đáng tin cậy về khả năng tổng quát hoá thật của mô hình**, không phải 79.4%.
+*   Mô hình vượt baseline rule-based rõ rệt trên mọi loại thực thể (73.6% vs 11.3% F1 tổng, đo out-of-fold) — việc fine-tune một mô hình đa phương thức thực sự cần thiết so với cách tiếp cận rule-based.
+*   So sánh cột "1 lần chia" và "out-of-fold" tiếp tục cho thấy vì sao nên nghi ngờ số liệu đo trên tập nhỏ: `Patient_Name` trông khá tốt (70.0%) khi chỉ đo trên 10 thực thể, nhưng rơi xuống 62.5% khi đo trên 48 thực thể (out-of-fold). Ngược lại `Dosage` trông tệ hơn thực tế (30.8%, support 5) so với con số đo trên nhiều thực thể hơn (44.8%, support 82).
+*   **`Dosage` là loại thực thể yếu nhất một cách nhất quán ở mọi cách đo** — hướng cải thiện cụ thể, đáng ưu tiên nhất khi có thêm dữ liệu gán nhãn.
 
 ### 2. Quá trình huấn luyện chính thức (Bước 5, 1 lần chia)
 
-Model triển khai (`layoutlmv3-medical-finetuned/`) được chọn theo checkpoint tốt nhất của lần huấn luyện chính thức này (1000 bước, chia cố định 36 train / 9 test):
+Model triển khai (`layoutlmv3-medical-finetuned/`) được chọn theo checkpoint tốt nhất của lần huấn luyện chính thức này (chia cố định 36 train / 9 test, `weight_decay=0.01` + `EarlyStoppingCallback`):
 
 ![Biểu Đồ Huấn Luyện LayoutLMv3](assets/training_progress.png)
 
 | Step | Epoch | Eval Loss | Precision (%) | Recall (%) | F1-Score (%) | Accuracy (%) |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| 100 | 11.11 | 0.2784 | 96.30 | 38.81 | 55.32 | 93.85 |
-| 200 | 22.22 | 0.2221 | 67.74 | 62.69 | 65.12 | 95.25 |
-| 300 | 33.33 | 0.2407 | 68.85 | 62.69 | 65.63 | 94.97 |
-| 400 | 44.44 | 0.2443 | 71.43 | 67.16 | 69.23 | 95.25 |
-| **500 (Best)** | **55.56** | **0.2499** | **77.59** | **67.16** | **72.00** | **95.81** |
-| 600 | 66.67 | 0.2793 | 70.77 | 68.66 | 69.70 | 95.25 |
-| 700 | 77.78 | 0.2787 | 71.93 | 61.19 | 66.13 | 95.53 |
-| 800 | 88.89 | 0.2820 | 75.00 | 67.16 | 70.87 | 95.53 |
-| 900 | 100.00 | 0.2953 | 74.58 | 65.67 | 69.84 | 95.81 |
-| 1000 | 111.11 | 0.3016 | 73.68 | 62.69 | 67.74 | 95.81 |
+| 100 | 11.11 | 0.2439 | 90.91 | 44.78 | 60.00 | 94.13 |
+| 200 | 22.22 | 0.1913 | 68.85 | 62.69 | 65.63 | 94.13 |
+| 300 | 33.33 | 0.1711 | 79.69 | 76.12 | 77.86 | 96.51 |
+| 400 | 44.44 | 0.1643 | 75.36 | 77.61 | 76.47 | 96.65 |
+| **500 (Best)** | **55.56** | **0.1746** | **81.25** | **77.61** | **79.39** | **96.65** |
+| 600 | 66.67 | 0.1949 | 80.00 | 77.61 | 78.79 | 96.37 |
+| 700 | 77.78 | 0.2152 | 77.94 | 79.10 | 78.52 | 96.37 |
+| 800 | 88.89 | 0.2147 | 78.79 | 77.61 | 78.20 | 96.65 |
 
-Checkpoint tốt nhất (Step 500, F1 72.00%) được tự động trích xuất làm trọng số triển khai. Huấn luyện hiện đã bổ sung `weight_decay=0.01` và `EarlyStoppingCallback` để giảm overfitting (eval loss từng có xu hướng tăng nhẹ sau Step 500 ở lần chạy gốc).
+Checkpoint tốt nhất (Step 500, F1 **79.39%**) được tự động trích xuất làm trọng số triển khai. `EarlyStoppingCallback` dừng huấn luyện ở Step 800 (3 lần eval liên tiếp không cải thiện F1 so với Step 500) thay vì chạy hết 1000 bước như cấu hình tối đa — tiết kiệm compute và tránh overfitting thêm. So với lần chạy gốc chưa có regularization (F1 tốt nhất 72.00%, eval loss tăng dần không kiểm soát tới 0.30 ở step 1000), lần chạy này có eval loss được kiểm soát tốt hơn nhiều (đỉnh chỉ ~0.215) và F1 cao hơn hẳn — **nhưng lưu ý con số 79.39% này là kết quả của 1 lần chia dữ liệu**, xem mục 5-Fold CV ở trên để có ước lượng đáng tin cậy hơn về khả năng tổng quát hoá thật (72.87% ± 4.75%).
 
 Chạy lại đánh giá / vẽ lại biểu đồ:
 ```powershell

@@ -7,19 +7,24 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 def main():
-    state_path = str(PROJECT_ROOT / "layoutlmv3-medical" / "checkpoint-1000" / "trainer_state.json")
-    if not os.path.exists(state_path):
-        print(f"Error: Could not find {state_path}")
+    # Đọc từ `trainer_log_history.json` được lưu cùng model đã fine-tune
+    # (layoutlmv3-medical-finetuned/), KHÔNG đọc từ thư mục checkpoint trung gian
+    # (layoutlmv3-medical/checkpoint-*) -- thư mục đó bị `run_training()` tự dọn
+    # sau khi train xong (tránh làm đầy ổ đĩa, xem step5_layoutlmv3_finetune.py),
+    # nên log_history phải được lưu lại ở nơi bền vững trước khi checkpoint mất đi.
+    log_path = str(PROJECT_ROOT / "layoutlmv3-medical-finetuned" / "trainer_log_history.json")
+    if not os.path.exists(log_path):
+        print(f"Error: Could not find {log_path}. Hãy chạy lại src/step5_layoutlmv3_finetune.py trước.")
         return
 
-    with open(state_path, "r", encoding="utf-8") as f:
-        state_data = json.load(f)
+    with open(log_path, "r", encoding="utf-8") as f:
+        log_history = json.load(f)
 
     # Extract eval metrics and train metrics
     eval_history = []
     train_history = []
-    
-    for entry in state_data.get("log_history", []):
+
+    for entry in log_history:
         if "eval_loss" in entry:
             eval_history.append({
                 "step": entry["step"],
@@ -45,8 +50,11 @@ def main():
     for row in eval_history:
         print(f"| {row['step']:4d} | {row['epoch']:5.2f} | {row['loss']:.4f}    | {row['precision']*100:12.2f} | {row['recall']*100:9.2f} | {row['f1']*100:12.2f} | {row['accuracy']*100:11.2f} |")
     
+    best_row = max(eval_history, key=lambda row: row["f1"]) if eval_history else None
+
     print("\n" + "="*40)
-    print(f"Chỉ số tốt nhất (Best F1-Score): {state_data.get('best_metric', 0)*100:.2f}% tại checkpoint: {state_data.get('best_model_checkpoint', 'N/A')}")
+    if best_row:
+        print(f"Chỉ số tốt nhất (Best F1-Score): {best_row['f1']*100:.2f}% tại Step {best_row['step']}")
     print("="*40)
 
     # 2. Plotting the metrics
@@ -77,12 +85,12 @@ def main():
     ax2.plot(steps, [f*100 for f in f1], label="F1-Score", color="purple", marker="D", linewidth=2)
     ax2.plot(steps, [a*100 for a in accuracy], label="Accuracy", color="brown", marker="x", linestyle="-.", linewidth=1.5)
     
-    # Highlight best model checkpoint (F1 = 72% at step 500)
-    best_step = 500
-    best_f1 = 0.72 * 100
-    ax2.axvline(x=best_step, color="red", linestyle=":", label="Best Model (Step 500)")
-    ax2.annotate(f"Best F1: {best_f1:.1f}%", xy=(best_step, best_f1), xytext=(best_step+50, best_f1-5),
-                 arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6))
+    # Highlight best model checkpoint (xác định động từ eval_history, không hardcode)
+    if best_row:
+        best_step, best_f1 = best_row["step"], best_row["f1"] * 100
+        ax2.axvline(x=best_step, color="red", linestyle=":", label=f"Best Model (Step {best_step})")
+        ax2.annotate(f"Best F1: {best_f1:.1f}%", xy=(best_step, best_f1), xytext=(best_step+50, best_f1-5),
+                     arrowprops=dict(facecolor='black', shrink=0.05, width=1, headwidth=6))
 
     ax2.set_title("Performance Metrics (%)", fontsize=14, fontweight="bold")
     ax2.set_xlabel("Steps", fontsize=12)

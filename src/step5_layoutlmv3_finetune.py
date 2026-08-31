@@ -224,6 +224,12 @@ def run_training(
     if save_dir:
         trainer.model.save_pretrained(save_dir)
         processor.save_pretrained(save_dir)
+        # Lưu lại toàn bộ log_history (loss/precision/recall/f1/accuracy theo từng
+        # eval step) VÀO save_dir trước khi run_output_dir (chứa checkpoint) bị dọn
+        # bên dưới -- nếu không, dữ liệu để vẽ lại biểu đồ huấn luyện (plot_metrics.py)
+        # sẽ bị mất vĩnh viễn cùng với checkpoint.
+        with open(os.path.join(save_dir, "trainer_log_history.json"), "w", encoding="utf-8") as f:
+            json.dump(trainer.state.log_history, f, ensure_ascii=False, indent=2)
 
     # Giải phóng bộ nhớ GPU trước khi chạy fold/run tiếp theo
     del trainer, model
