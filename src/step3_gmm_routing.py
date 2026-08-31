@@ -4,9 +4,10 @@ import json
 import torch
 import numpy as np
 from PIL import Image
-from transformers import LayoutLMv3FeatureExtractor, LayoutLMv3Model, LayoutLMv3Processor
+from transformers import LayoutLMv3Model, LayoutLMv3Processor
 from sklearn.mixture import GaussianMixture
 from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
 import joblib
 from pathlib import Path
 from tqdm import tqdm
@@ -89,42 +90,84 @@ def train_and_evaluate_gmm(dataset_dir: str):
         
     X = np.array(features)
     y_true = np.array(labels)
-    
-    print("\nĐang huấn luyện GaussianMixture Model (K=3)...")
-    gmm = GaussianMixture(n_components=3, covariance_type='full', random_state=42)
-    y_pred_cluster = gmm.fit_predict(X)
-    
-    # Do GMM là học không giám sát, cần map lại id cluster thành nhãn chuẩn dựa trên nhãn phổ biến nhất trong cluster
+
+    # ---------------------------------------------------------
+    # Tách Train/Test (80/20, stratified) để đánh giá KHÔNG bị lạc quan giả tạo.
+    # GMM là mô hình không giám sát nên việc fit rồi đánh giá lại trên chính
+    # tập đã fit sẽ luôn cho điểm số cao hơn thực tế (data leakage). Ở đây ta:
+    #   1) Fit GMM + xác định ánh xạ cluster->nhãn CHỈ trên tập train.
+    #   2) Đánh giá classification_report/confusion_matrix TRÊN TẬP TEST (chưa
+    #      từng thấy khi fit), để có con số phản ánh đúng khả năng tổng quát hoá.
+    #   3) Sau khi đã có số liệu đánh giá trung thực, refit lại GMM cuối cùng
+    #      trên TOÀN BỘ dữ liệu (train+test) để tận dụng hết dữ liệu sẵn có cho
+    #      bản triển khai thực tế — đây là lựa chọn thường gặp trong thực tế,
+    #      miễn là số liệu báo cáo ở bước 2 không bị lẫn với model triển khai.
+    # ---------------------------------------------------------
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y_true, test_size=0.2, random_state=42, stratify=y_true
+    )
+
+    print(f"\nSố mẫu train: {len(X_train)} | Số mẫu test (hold-out): {len(X_test)}")
+    print("Đang huấn luyện GaussianMixture Model (K=3) trên tập TRAIN...")
+    gmm_eval = GaussianMixture(n_components=3, covariance_type='full', random_state=42)
+    y_pred_cluster_train = gmm_eval.fit_predict(X_train)
+
+    # Do GMM là học không giám sát, cần map lại id cluster thành nhãn chuẩn dựa trên
+    # nhãn phổ biến nhất trong cluster -- ánh xạ này CHỈ được suy ra từ tập train.
     cluster_to_label = {}
     for cluster_id in range(3):
-        mask = (y_pred_cluster == cluster_id)
+        mask = (y_pred_cluster_train == cluster_id)
         if np.any(mask):
-            true_labels_in_cluster = y_true[mask]
+            true_labels_in_cluster = y_train[mask]
             most_frequent_label = np.bincount(true_labels_in_cluster).argmax()
             cluster_to_label[cluster_id] = most_frequent_label
         else:
-            cluster_to_label[cluster_id] = 0 # Default fallback
-            
-    y_pred_mapped = np.array([cluster_to_label[c] for c in y_pred_cluster])
-    
-    # In báo cáo kết quả
+            cluster_to_label[cluster_id] = 0  # Default fallback
+
     target_names = [inv_label_map[i] for i in range(3)]
-    print("\n--- Classification Report ---")
-    print(classification_report(y_true, y_pred_mapped, target_names=target_names))
-    
-    print("\n--- Confusion Matrix ---")
-    print(confusion_matrix(y_true, y_pred_mapped))
+
+    # Đánh giá trên tập TEST (hold-out, GMM chưa từng thấy các điểm này)
+    y_pred_cluster_test = gmm_eval.predict(X_test)
+    y_pred_mapped_test = np.array([cluster_to_label[c] for c in y_pred_cluster_test])
+
+    print("\n--- Classification Report (đánh giá trên tập TEST hold-out, KHÔNG dùng để fit) ---")
+    print(classification_report(y_test, y_pred_mapped_test, target_names=target_names))
+
+    print("\n--- Confusion Matrix (tập TEST hold-out) ---")
+    print(confusion_matrix(y_test, y_pred_mapped_test))
+
+    # ---------------------------------------------------------
+    # Sau khi đã có số liệu đánh giá trung thực ở trên, refit GMM cuối cùng trên
+    # TOÀN BỘ dữ liệu để dùng làm router triển khai (nhiều dữ liệu hơn -> ước lượng
+    # các cụm Gaussian ổn định hơn). Ánh xạ cluster->nhãn cũng được suy lại trên
+    # toàn bộ dữ liệu cho model triển khai này.
+    # ---------------------------------------------------------
+    print("\nĐang refit GaussianMixture Model (K=3) trên TOÀN BỘ dữ liệu để triển khai...")
+    gmm_final = GaussianMixture(n_components=3, covariance_type='full', random_state=42)
+    y_pred_cluster_full = gmm_final.fit_predict(X)
+
+    cluster_to_label_full = {}
+    for cluster_id in range(3):
+        mask = (y_pred_cluster_full == cluster_id)
+        if np.any(mask):
+            true_labels_in_cluster = y_true[mask]
+            most_frequent_label = np.bincount(true_labels_in_cluster).argmax()
+            cluster_to_label_full[cluster_id] = most_frequent_label
+        else:
+            cluster_to_label_full[cluster_id] = 0
 
     # Lưu mô hình GMM đã huấn luyện cùng bảng ánh xạ nhãn để Step 6 nạp và định tuyến chuẩn xác
     gmm_save_path = str(PROJECT_ROOT / "gmm_router.pkl")
     router_data = {
-        "gmm": gmm,
-        "cluster_to_label": cluster_to_label,
+        "gmm": gmm_final,
+        "cluster_to_label": cluster_to_label_full,
         "target_names": target_names,
         "class_mapping": {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"}
     }
     joblib.dump(router_data, gmm_save_path)
-    print(f"\nĐã lưu mô hình GMM định tuyến tại: {gmm_save_path}")
+    print(f"\nĐã lưu mô hình GMM định tuyến (huấn luyện trên toàn bộ dữ liệu) tại: {gmm_save_path}")
+    print("Lưu ý: Classification Report/Confusion Matrix ở trên được đo trên tập TEST hold-out")
+    print("       (không dùng để fit), phản ánh đúng khả năng tổng quát hoá của router.")
 
 if __name__ == "__main__":
     DATASET_DIR = str(PROJECT_ROOT / "dataset")

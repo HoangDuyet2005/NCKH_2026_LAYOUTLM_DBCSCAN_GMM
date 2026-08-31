@@ -1,110 +1,126 @@
-# Hệ Thống Trích Xuất Thông Tin Bệnh Án Y Tế Tự Động (Vietnamese Medical Document AI)
-### Mô Hình Kết Hợp: EasyOCR + DBSCAN + GMM Document Routing + LayoutLMv3 (BIO Tagging)
+# Hệ Thống Trích Xuất Thông Tin Bệnh Án Y Tế Tự Động
+### Vietnamese Medical Document AI — EasyOCR + DBSCAN + GMM Routing + LayoutLMv3 (BIO Tagging)
 
-Dự án này là một pipeline xử lý tài liệu thông minh (Document AI) hoàn chỉnh, được thiết kế chuyên biệt để phân loại và trích xuất thông tin thực thể y tế (Patient Name, Diagnosis, Medication, Dosage, Lab Value...) từ các hình ảnh bệnh án, đơn thuốc và phiếu xét nghiệm tiếng Việt.
+Pipeline Document AI hoàn chỉnh, chuyên biệt cho việc **phân loại và trích xuất thông tin thực thể y tế** (Tên bệnh nhân, Chẩn đoán, Tên thuốc, Liều lượng, Kết quả xét nghiệm) từ ảnh chụp bệnh án, đơn thuốc và phiếu xét nghiệm **tiếng Việt** — đi từ ảnh gốc, qua OCR và định tuyến phân loại không giám sát, tới một mô hình Transformer đa phương thức được fine-tune và đánh giá bằng cross-validation.
+
+---
+
+## Mục Lục
+
+- [Tổng Quan Hệ Thống](#-tổng-quan-hệ-thống-architecture-workflow)
+- [Quick Start](#-quick-start)
+- [Cấu Trúc Dự Án](#-cấu-trúc-dự-án)
+- [Hướng Dẫn Vận Hành Chi Tiết](#-hướng-dẫn-vận-hành-chi-tiết-step-by-step-guide)
+- [Minh Hoạ Dữ Liệu](#-minh-hoạ-dữ-liệu)
+- [Kết Quả Đánh Giá](#-kết-quả-đánh-giá-evaluation-results)
+- [Hạn Chế & Định Hướng Cải Thiện](#-hạn-chế--định-hướng-cải-thiện)
 
 ---
 
 ## 📌 Tổng Quan Hệ Thống (Architecture Workflow)
 
-Quy trình xử lý của hệ thống trải qua 6 bước chính từ ảnh gốc cho tới dữ liệu trích xuất cấu trúc cuối cùng:
+Quy trình xử lý trải qua 6 bước chính từ ảnh gốc tới dữ liệu trích xuất cấu trúc cuối cùng, cộng thêm 2 bước đánh giá sâu (5b, 5c) chạy song song với Bước 5 để kiểm chứng độ tin cậy của mô hình:
 
 ```mermaid
 graph TD
-    A[Ảnh Bệnh Án/Đơn Thuốc Gốc] --> B[Step 1: Trích Xuất OCR bằng EasyOCR]
-    B --> C[Step 2: Sắp Xếp Dòng & Làm Sạch bằng DBSCAN]
-    C --> D[Step 3: Định Tuyến Phân Loại Tài Liệu bằng GMM & LayoutLMv3 Embeddings]
-    D -->|Phân loại xong| E[Step 4 & 4b: Gán Nhãn Label Studio & Chuẩn Hóa BIO]
-    E -->|training_data.json| F[Step 5: Tinh Chỉnh LayoutLMv3 Token Classification]
-    F -->|Đã huấn luyện xong| G[Step 6: Pipeline Dự Đoán End-to-End & Hậu Xử Lý]
-    G --> H[Kết quả xuất cấu trúc JSON]
+    A[Ảnh Bệnh Án / Đơn Thuốc Gốc] --> B[Bước 1: OCR bằng EasyOCR]
+    B --> C[Bước 2: Sắp Xếp Dòng & Làm Sạch bằng DBSCAN]
+    C --> D[Bước 3: Định Tuyến Phân Loại Tài Liệu bằng GMM + LayoutLMv3 Embedding]
+    D -->|Phân loại xong| E[Bước 4 & 4b: Gán Nhãn Label Studio & Chuẩn Hoá BIO]
+    E -->|training_data.json| F[Bước 5: Fine-tune LayoutLMv3 Token Classification]
+    F --> F1[Bước 5b: Phân tích per-entity + So sánh Baseline]
+    F --> F2[Bước 5c: Đánh giá bằng 5-Fold Cross-Validation]
+    F -->|Model đã huấn luyện| G[Bước 6: Pipeline Dự Đoán End-to-End & Hậu Xử Lý]
+    G --> H[Kết Quả Trích Xuất — JSON Có Cấu Trúc]
 ```
+
+**Điểm nổi bật về mặt kỹ thuật:**
+- **GMM Document Routing**: phân loại tài liệu (Đơn thuốc / Phiếu xét nghiệm / Hồ sơ bệnh án) theo hướng **không giám sát**, dùng Gaussian Mixture Model trên page-level embedding `[CLS]` 768 chiều của LayoutLMv3 — đánh giá bằng train/test hold-out riêng biệt để tránh data leakage.
+- **LayoutLMv3 Token Classification**: fine-tune mô hình Transformer đa phương thức (text + layout + hình ảnh) để gán nhãn BIO cho 5 loại thực thể y tế.
+- **Đánh giá bằng 5-Fold Cross-Validation**: không chỉ báo cáo 1 con số F1 trên 1 lần chia dữ liệu — mô hình được đánh giá out-of-fold trên toàn bộ tập gán nhãn để có kết luận thống kê đáng tin cậy hơn (chi tiết ở mục [Kết Quả Đánh Giá](#-kết-quả-đánh-giá-evaluation-results)).
+- **So sánh với baseline rule-based**: định lượng mức độ hữu ích thực sự của việc fine-tune một mô hình đa phương thức so với một cách tiếp cận regex/keyword đơn giản.
 
 ---
 
-## 📥 Hướng Dẫn Clone & Chạy Nhanh (Quick Start)
+## 📥 Quick Start
 
-Nếu bạn muốn tải dự án này về máy cá nhân của mình để chạy hoặc nghiên cứu tiếp, hãy làm theo các bước chuẩn sau:
-
-### 1. Clone dự án từ GitHub
-Mở terminal trên máy và chạy lệnh sau:
+### 1. Clone dự án
 ```bash
 git clone https://github.com/HoangDuyet2005/NCKH_2026_LAYOUTLM_DBCSCAN_GMM.git
 cd NCKH_2026_LAYOUTLM_DBCSCAN_GMM
 ```
 
-### 2. Thiết lập môi trường ảo (Khuyến khích)
-Để tránh làm rác thư viện hệ thống, hãy tạo và kích hoạt môi trường ảo:
-*   **Trên Windows (PowerShell):**
+### 2. Thiết lập môi trường ảo (khuyến khích)
+*   **Windows (PowerShell):**
     ```powershell
     python -m venv venv
     .\venv\Scripts\Activate.ps1
     ```
-*   **Trên Linux/macOS:**
+*   **Linux / macOS:**
     ```bash
     python3 -m venv venv
     source venv/bin/activate
     ```
 
-### 3. Cài đặt các thư viện cần thiết
+### 3. Cài đặt thư viện
 ```bash
-# Cài đặt PyTorch với hỗ trợ GPU CUDA (Khuyên dùng để train nhanh)
+# PyTorch với hỗ trợ GPU CUDA (khuyến khích để train nhanh)
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 
-# Cài đặt toàn bộ thư viện từ requirements.txt
+# Toàn bộ thư viện còn lại
 pip install -r requirements.txt
 ```
+Yêu cầu **Python 3.10+**. Khuyến khích chạy trên máy có **GPU CUDA** — mô hình đã được huấn luyện và benchmark thực tế trên GPU laptop 6GB VRAM (xem ghi chú tốc độ ở Bước 5c).
 
-### 4. Chuẩn bị tập dữ liệu (Dataset)
-Vì dữ liệu hình ảnh nặng không được đẩy lên GitHub (do cấu hình `.gitignore`), bạn cần tự tạo cấu trúc thư mục và đặt các ảnh của bạn vào:
-1.  Tạo thư mục tên `dataset/` ở thư mục gốc của dự án.
-2.  Bên trong `dataset/`, tạo 3 thư mục con tương ứng: `Don_thuoc`, `Phieu_xet_nghiem`, `Ho_so_benh_an`.
-3.  Bỏ các ảnh y tế tương ứng của bạn vào các thư mục con này để bắt đầu chạy từ `src/step1_ocr_extract.py`.
+### 4. Chuẩn bị dữ liệu
+Dữ liệu ảnh gốc không được đẩy lên GitHub (`.gitignore`). Tự tạo cấu trúc:
+```
+dataset/
+├── Don_thuoc/
+├── Phieu_xet_nghiem/
+└── Ho_so_benh_an/
+```
+rồi đặt ảnh y tế tương ứng vào từng thư mục con để bắt đầu chạy từ `src/step1_ocr_extract.py`.
 
 ### 5. Chạy nhanh trích xuất trên ảnh có sẵn (Inference)
-Nếu bạn đã có mô hình đã được huấn luyện nằm ở thư mục `layoutlmv3-medical-finetuned/`, chỉ cần bỏ ảnh cần trích xuất (ví dụ `test.png`) vào thư mục `assets/`, thay đổi biến `TEST_IMAGE_PATH` ở cuối file `src/step6_inference_postprocessing.py` và chạy:
+Nếu đã có model fine-tune tại `layoutlmv3-medical-finetuned/`, chỉ cần đặt ảnh cần trích xuất vào `assets/`, đổi biến `TEST_IMAGE_PATH` ở cuối `src/step6_inference_postprocessing.py`, rồi chạy:
 ```bash
 python src/step6_inference_postprocessing.py
 ```
 
 ---
 
-## 🛠️ Yêu Cầu Hệ Thống & Cài Đặt (Setup & Installation)
+## 📁 Cấu Trúc Dự Án
 
-Dự án yêu cầu cài đặt Python 3.10 trở lên và cài đặt các thư viện trên môi trường có hỗ trợ **GPU CUDA** để đạt hiệu suất tối ưu khi chạy mô hình học sâu.
-
-### 1. Cài đặt các thư viện cốt lõi
-Chạy lệnh sau bằng Python hệ thống để cài đặt toàn bộ các thư viện cần thiết:
-```powershell
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
-pip install -r requirements.txt
-```
-
-### 2. Cấu trúc thư mục dự án
 ```text
 NCKH_Model/
-├── src/                                 # Toàn bộ mã nguồn Python
-│   ├── step1_ocr_extract.py             # Trích xuất OCR tiếng Việt bằng EasyOCR
-│   ├── step2_dbscan_cleaning.py         # Làm sạch nhiễu và sắp xếp dòng bằng DBSCAN
-│   ├── step3_gmm_routing.py             # Định tuyến loại tài liệu bằng GMM & LayoutLMv3 [CLS]
-│   ├── step4_prepare_label_studio.py    # Tạo dữ liệu định dạng Label Studio
-│   ├── step4b_label_studio_to_training.py # Ánh xạ nhãn gán thành cấu trúc BIO
-│   ├── step5_layoutlmv3_finetune.py     # Huấn luyện (Fine-tune) mô hình LayoutLMv3
-│   ├── step6_inference_postprocessing.py # Pipeline dự đoán ảnh mới & Hậu xử lý trích xuất
-│   ├── check_export.py                  # Kiểm tra file export Label Studio
-│   ├── cors_server.py                   # HTTP Server hỗ trợ CORS cho Label Studio
-│   └── plot_metrics.py                  # Vẽ biểu đồ kết quả huấn luyện
-├── data/                                # Dữ liệu JSON nhãn
-│   ├── label_studio_export.json         # File nhãn xuất ra từ Label Studio
-│   ├── label_studio_import.json         # File nhãn chuẩn bị để import vào Label Studio
-│   └── training_data.json               # File dữ liệu chuẩn hóa dạng BIO để training
-├── assets/                              # Ảnh minh họa / demo
-│   └── training_progress.png            # Biểu đồ đánh giá kết quả huấn luyện mô hình
-├── dataset/                             # [.gitignore] Tập dữ liệu ảnh gốc chia 3 loại
+├── src/
+│   ├── step1_ocr_extract.py              # Trích xuất OCR tiếng Việt bằng EasyOCR
+│   ├── step2_dbscan_cleaning.py          # Làm sạch nhiễu & sắp xếp dòng bằng DBSCAN
+│   ├── step3_gmm_routing.py              # Định tuyến loại tài liệu bằng GMM + LayoutLMv3 [CLS]
+│   ├── step4_prepare_label_studio.py     # Tạo dữ liệu định dạng Label Studio
+│   ├── step4b_label_studio_to_training.py# Ánh xạ nhãn gán thành cấu trúc BIO
+│   ├── step5_layoutlmv3_finetune.py      # Fine-tune LayoutLMv3 (huấn luyện chính thức)
+│   ├── step5b_eval_breakdown.py          # Đánh giá chi tiết theo loại thực thể + baseline rule-based
+│   ├── step5c_kfold_cv.py                # Đánh giá bằng 5-Fold Cross-Validation
+│   ├── step6_inference_postprocessing.py # Pipeline dự đoán ảnh mới & hậu xử lý trích xuất
+│   ├── check_export.py                   # Kiểm tra file export Label Studio
+│   ├── cors_server.py                    # HTTP server hỗ trợ CORS cho Label Studio
+│   ├── plot_metrics.py                   # Vẽ biểu đồ huấn luyện (Bước 5, 1 lần chia)
+│   └── plot_kfold_results.py             # Vẽ biểu đồ kết quả 5-Fold CV
+├── data/
+│   ├── label_studio_export.json          # Nhãn xuất ra từ Label Studio
+│   ├── label_studio_import.json          # Nhãn chuẩn bị để import vào Label Studio
+│   ├── training_data.json                # Dữ liệu chuẩn hoá dạng BIO để training
+│   └── kfold_results.json                # Kết quả tổng hợp 5-Fold Cross-Validation
+├── assets/
+│   ├── training_progress.png             # Biểu đồ huấn luyện Bước 5 (1 lần chia)
+│   └── kfold_results.png                 # Biểu đồ kết quả 5-Fold CV
+├── dataset/                              # [.gitignore] Ảnh gốc, chia 3 loại tài liệu
 │   ├── Don_thuoc/
 │   ├── Phieu_xet_nghiem/
 │   └── Ho_so_benh_an/
-├── layoutlmv3-medical-finetuned/        # [.gitignore] Mô hình LayoutLMv3 đã finetune
+├── layoutlmv3-medical-finetuned/         # [.gitignore] Model LayoutLMv3 đã fine-tune
 ├── .gitignore
 ├── requirements.txt
 └── README.md
@@ -114,68 +130,112 @@ NCKH_Model/
 
 ## 🚀 Hướng Dẫn Vận Hành Chi Tiết (Step-by-Step Guide)
 
-> **Lưu ý:** Tất cả các lệnh đều chạy từ thư mục gốc (root) của dự án.
+> Tất cả lệnh chạy từ thư mục gốc (root) của dự án.
 
-### Bước 1: Trích xuất OCR bằng EasyOCR
-Mô hình sẽ quét thư mục `dataset`, nhận diện chữ tiếng Việt và tọa độ Bounding Box, sau đó lưu thành các file `.json` đi kèm cùng cấp với mỗi ảnh.
+### Bước 1 — OCR bằng EasyOCR
+Quét thư mục `dataset`, nhận diện chữ tiếng Việt và bounding box, lưu kết quả thành file `.json` cùng cấp mỗi ảnh.
 ```powershell
 python src/step1_ocr_extract.py
 ```
 
-### Bước 2: Sắp xếp dòng & Làm sạch bằng DBSCAN
-Do tọa độ OCR của EasyOCR thường bị xô lệch và trả về dạng các từ đơn lẻ, thuật toán **DBSCAN** sẽ gom cụm các từ trên cùng một dòng vật lý và sắp xếp chúng từ trái sang phải, đồng thời loại bỏ các điểm nhiễu ngoại lai.
+### Bước 2 — Sắp xếp dòng & làm sạch bằng DBSCAN
+Tọa độ OCR của EasyOCR thường xô lệch và trả về dạng từ đơn lẻ; **DBSCAN** gom cụm các từ trên cùng dòng vật lý, sắp xếp trái sang phải, loại bỏ điểm nhiễu ngoại lai.
 ```powershell
 python src/step2_dbscan_cleaning.py
 ```
 
-### Bước 3: Định tuyến phân loại tài liệu (GMM + LayoutLMv3 Embeddings)
-Sử dụng mô hình LayoutLMv3 pretrained để trích xuất Page-level Embedding (vector `[CLS]`), sau đó dùng thuật toán phân cụm hỗn hợp Gaussian (**Gaussian Mixture Model - GMM**) để tự động phân loại tài liệu thành 3 nhóm chính: Đơn thuốc, Phiếu xét nghiệm, Hồ sơ bệnh án.
+### Bước 3 — Định tuyến phân loại tài liệu (GMM + LayoutLMv3 Embedding)
+Trích xuất page-level embedding `[CLS]` từ LayoutLMv3 pretrained, dùng **Gaussian Mixture Model** để tự động phân loại tài liệu thành 3 nhóm (Đơn thuốc / Phiếu xét nghiệm / Hồ sơ bệnh án).
+
+Đánh giá được tách bạch để tránh data leakage: GMM fit và ánh xạ cluster→nhãn **chỉ trên tập train (80%)**, `classification_report` đo **trên tập test hold-out (20%)** mà mô hình chưa từng thấy. Model triển khai cuối cùng (`gmm_router.pkl`) sau đó được refit trên toàn bộ dữ liệu để tận dụng hết dữ liệu sẵn có.
 ```powershell
 python src/step3_gmm_routing.py
 ```
 
-### Bước 4: Chuẩn bị dữ liệu và Gán nhãn thủ công (Label Studio)
-Tạo file nhập liệu cho Label Studio đã được điền sẵn kết quả OCR sạch:
+### Bước 4 — Chuẩn bị dữ liệu & gán nhãn thủ công (Label Studio)
 ```powershell
 python src/step4_prepare_label_studio.py
 ```
-*   **Hướng dẫn gán nhãn:** Import file `data/label_studio_import.json` vào công cụ [Label Studio](http://localhost:8080). Tiến hành quét vùng và gán nhãn thực thể y tế theo 5 nhóm nhãn đích: `Patient_Name`, `Diagnosis`, `Medication`, `Dosage`, `Lab_Value`. Sau đó export kết quả định dạng JSON lưu vào dự án với tên **`data/label_studio_export.json`**.
+Import `data/label_studio_import.json` vào [Label Studio](http://localhost:8080), gán nhãn theo 5 nhóm thực thể đích: `Patient_Name`, `Diagnosis`, `Medication`, `Dosage`, `Lab_Value`. Export kết quả về `data/label_studio_export.json`.
 
-### Bước 4b: Chuyển đổi dữ liệu nhãn thành cấu trúc BIO
-Ánh xạ tọa độ gán nhãn thủ công từ phần trăm sang hệ tọa độ pixel của OCR, chuẩn hóa về khoảng `[0, 1000]` và gán nhãn định dạng BIO (B-Entity, I-Entity, O) cho từng từ:
+### Bước 4b — Chuyển đổi nhãn thành cấu trúc BIO
+Ánh xạ tọa độ nhãn thủ công (phần trăm) sang hệ tọa độ pixel OCR, chuẩn hoá về `[0, 1000]`, gán nhãn BIO (B-/I-/O) cho từng từ.
 ```powershell
 python src/step4b_label_studio_to_training.py
 ```
 
-### Bước 5: Huấn luyện (Fine-tune) LayoutLMv3
-Huấn luyện mô hình Transformer đa phương thức (Multimodal) kết hợp thông tin văn bản, bố cục không gian (Bounding Box) và hình ảnh gốc của tài liệu:
+### Bước 5 — Fine-tune LayoutLMv3
+Huấn luyện mô hình Transformer đa phương thức, kết hợp văn bản, bố cục không gian (bounding box) và ảnh gốc.
 ```powershell
 python src/step5_layoutlmv3_finetune.py
 ```
 
-### Bước 6: Chạy thử nghiệm dự đoán End-to-End & Hậu xử lý trích xuất
-Quét một ảnh đơn thuốc/bệnh án mới, chạy qua toàn bộ pipeline tự động (OCR -> DBSCAN -> GMM -> LayoutLMv3). Thuật toán hậu xử lý heuristics sẽ ghép các từ đơn lẻ có nhãn BIO liền kề nhau thành cụm từ hoàn chỉnh và xuất ra file kết quả JSON cấu trúc:
+### Bước 5b (tuỳ chọn) — Phân tích chi tiết & so sánh Baseline
+Đánh giá lại model đã fine-tune, tách theo từng loại thực thể, so với baseline rule-based (regex/keyword) trên cùng tập test — định lượng mức độ hữu ích thực sự của việc fine-tune.
+```powershell
+python src/step5b_eval_breakdown.py
+```
+
+### Bước 5c (tuỳ chọn) — Đánh giá bằng 5-Fold Cross-Validation
+Chia 45 mẫu gán nhãn thành 5 fold, mỗi mẫu được dùng làm test đúng 1 lần bởi model chưa từng thấy nó lúc train, rồi gộp kết quả trên toàn bộ dữ liệu — đáng tin cậy hơn nhiều so với 1 lần chia 9 mẫu.
+```powershell
+python src/step5c_kfold_cv.py
+python src/plot_kfold_results.py   # vẽ lại biểu đồ sau khi có kết quả mới
+```
+**Cần GPU, mất khoảng 5-7 tiếng** (huấn luyện 5 model độc lập — đo thực tế trên GPU laptop RTX 3050 6GB). Script tự dọn checkpoint sau mỗi fold để tránh làm đầy ổ đĩa; nên có sẵn ít nhất ~5GB trống trước khi chạy.
+
+### Bước 6 — Pipeline dự đoán End-to-End & hậu xử lý
+Chạy toàn bộ pipeline tự động (OCR → DBSCAN → GMM → LayoutLMv3) trên 1 ảnh mới. Hậu xử lý heuristic ghép các từ có nhãn BIO liền kề thành cụm từ hoàn chỉnh, xuất kết quả JSON có cấu trúc.
 ```powershell
 python src/step6_inference_postprocessing.py
 ```
 
 ---
 
-## 🖼️ Minh Họa Dữ Liệu & Kết Quả Huấn Luyện (Demo & Training Progress)
+## 🖼️ Minh Hoạ Dữ Liệu
 
-### 1. Dữ Liệu Mẫu Bệnh Án & Phiếu Xét Nghiệm
 | Đơn Thuốc Mẫu | Phiếu Xét Nghiệm Mẫu |
 |:---:|:---:|
 | ![Mẫu Đơn Thuốc](assets/tải_xuống.jpg) | ![Mẫu Phiếu Xét Nghiệm](assets/c1907f5d-508c-446d-9974-bf304365b36c.png) |
 
-### 2. Biểu Đồ Đánh Giá Quá Trình Huấn Luyện (Training & Validation Curves)
-![Biểu Đồ Huấn Luyện LayoutLMv3](assets/training_progress.png)
-
 ---
 
-## 📊 Kết Quả Huấn Luyện Mô Hình (Evaluation Metrics)
+## 📊 Kết Quả Đánh Giá (Evaluation Results)
 
-Hệ thống đã được huấn luyện tối ưu qua 1000 bước (111 Epochs) trên tập dữ liệu gán nhãn thực tế. Kết quả đánh giá trên tập kiểm tra độc lập qua các mốc huấn luyện như sau:
+### 1. Đánh giá chính: 5-Fold Cross-Validation
+
+Vì tập gán nhãn chỉ có **45 tài liệu**, một lần chia train/test cố định (36/9) không đủ tin cậy — chỉ 1-2 thực thể dự đoán sai đã làm F1 dao động vài điểm phần trăm. Thay vì gán thêm nhãn (tốn nhiều thời gian), mô hình được đánh giá bằng **5-Fold Cross-Validation**: chia lại 45 mẫu thành 5 fold, mỗi mẫu lần lượt làm test đúng 1 lần bởi model chưa từng thấy nó lúc train (out-of-fold), rồi gộp toàn bộ dự đoán lại để đánh giá trên **toàn bộ 45 tài liệu / 387 thực thể**.
+
+![Biểu Đồ Kết Quả 5-Fold Cross-Validation](assets/kfold_results.png)
+
+| Chỉ số | Trung bình 5 fold | F1 out-of-fold (toàn bộ 45 mẫu) |
+|:---|:---:|:---:|
+| Precision | 76.35% ± 6.10% | 76.5% |
+| Recall | 70.00% ± 5.46% | 70.8% |
+| **F1-Score** | **72.87% ± 4.75%** | **73.6%** |
+
+**F1 theo từng loại thực thể** (so với baseline rule-based và với con số đo trên 1 lần chia ban đầu):
+
+| Loại thực thể | Baseline rule-based | LayoutLMv3, 1 lần chia (9 mẫu) | LayoutLMv3, **5-Fold out-of-fold (45 mẫu)** | Support (OOF) |
+|:---|:---:|:---:|:---:|:---:|
+| Lab_Value | 12.1% | 88.9% | **97.9%** | 145 |
+| Medication | 0.0% | 80.0% | **76.9%** | 38 |
+| Diagnosis | 0.0% | 58.8% | **63.7%** | 74 |
+| Patient_Name | 21.1% | 82.4% | **62.5%** | 48 |
+| Dosage | 0.0% | 26.7% | **44.8%** | 82 |
+| **Micro avg (tổng)** | **11.3%** | **72.0%** | **73.6%** | 387 |
+
+**Nhận định:**
+*   F1 trung bình 5 fold (72.87%) và F1 out-of-fold (73.6%) đều rất khớp với con số 72.00% của lần chia đơn ban đầu — bằng chứng thống kê cho thấy con số này **không phải may rủi của 1 lần chia**, dù độ lệch chuẩn ±4.75% cho thấy vẫn còn dao động do dữ liệu nhỏ.
+*   Mô hình vượt baseline rule-based rõ rệt trên mọi loại thực thể (73.6% vs 11.3% F1 tổng) — việc fine-tune một mô hình đa phương thức thực sự cần thiết so với cách tiếp cận rule-based.
+*   So sánh cột "1 lần chia" và "out-of-fold" cho thấy lý do nên nghi ngờ số liệu đo trên tập nhỏ: `Patient_Name` trông rất tốt (82.4%) khi chỉ đo trên 10 thực thể, nhưng rơi xuống 62.5% khi đo trên 48 thực thể (out-of-fold) — con số ban đầu chỉ là may mắn trên vài mẫu test. Ngược lại `Dosage` trông rất tệ (26.7%, support 5) nhưng thực ra khá hơn (44.8%, support 82) khi đo trên nhiều thực thể hơn.
+*   **`Dosage` là loại thực thể yếu nhất một cách nhất quán ở cả 2 cách đo** — hướng cải thiện cụ thể, đáng ưu tiên nhất khi có thêm dữ liệu gán nhãn.
+
+### 2. Quá trình huấn luyện chính thức (Bước 5, 1 lần chia)
+
+Model triển khai (`layoutlmv3-medical-finetuned/`) được chọn theo checkpoint tốt nhất của lần huấn luyện chính thức này (1000 bước, chia cố định 36 train / 9 test):
+
+![Biểu Đồ Huấn Luyện LayoutLMv3](assets/training_progress.png)
 
 | Step | Epoch | Eval Loss | Precision (%) | Recall (%) | F1-Score (%) | Accuracy (%) |
 |:---:|:---:|:---:|:---:|:---:|:---:|:---:|
@@ -190,14 +250,29 @@ Hệ thống đã được huấn luyện tối ưu qua 1000 bước (111 Epochs
 | 900 | 100.00 | 0.2953 | 74.58 | 65.67 | 69.84 | 95.81 |
 | 1000 | 111.11 | 0.3016 | 73.68 | 62.69 | 67.74 | 95.81 |
 
-*   **Chỉ số tối ưu nhất:** Đạt được ở **Step 500** với điểm **F1-Score đạt 72.00%** (Precision: **77.59%**, Recall: **67.16%**, Accuracy: **95.81%**).
-*   Mô hình ở bước tốt nhất (Step 500) đã tự động được trích xuất và đóng gói làm trọng số dự đoán chính của pipeline tại `./layoutlmv3-medical-finetuned`.
-*   Biểu đồ chi tiết đường cong học tập (Learning Curves) được lưu trữ tại file ảnh **`assets/training_progress.png`** trong thư mục assets.
+Checkpoint tốt nhất (Step 500, F1 72.00%) được tự động trích xuất làm trọng số triển khai. Huấn luyện hiện đã bổ sung `weight_decay=0.01` và `EarlyStoppingCallback` để giảm overfitting (eval loss từng có xu hướng tăng nhẹ sau Step 500 ở lần chạy gốc).
 
-Để vẽ lại biểu đồ hoặc cập nhật bảng thông số mới khi huấn luyện lại, hãy chạy:
+Chạy lại đánh giá / vẽ lại biểu đồ:
 ```powershell
-python src/plot_metrics.py
+python src/plot_metrics.py        # biểu đồ Bước 5 (1 lần chia)
+python src/plot_kfold_results.py  # biểu đồ 5-Fold CV
 ```
 
 ---
-*Bản quyền nghiên cứu khoa học thuộc về nhóm tác giả dự án NCKH 2026 - HoangDuyet2005.*
+
+## ⚠️ Hạn Chế & Định Hướng Cải Thiện
+
+**Đã khắc phục trong quá trình phát triển:**
+- **Đánh giá GMM Router (Bước 3) từng bị data leakage** (fit và eval trên cùng dữ liệu) → đã tách train/test hold-out riêng biệt.
+- **Chưa có baseline so sánh** → đã bổ sung baseline rule-based (regex/keyword), định lượng được LayoutLMv3 hơn baseline 73.6% vs 11.3% F1 (xem mục Kết Quả).
+- **Dấu hiệu overfitting** (eval loss tăng nhẹ sau Step 500) → đã bổ sung `weight_decay` + `EarlyStoppingCallback`.
+- **Chỉ đánh giá trên 1 lần chia 9 mẫu, độ tin cậy thấp** → đã bổ sung 5-Fold Cross-Validation, đánh giá out-of-fold trên toàn bộ 45 mẫu.
+
+**Còn tồn tại:**
+1.  **Quy mô dữ liệu gán nhãn NER còn nhỏ.** Mới gán nhãn BIO thủ công cho 45/900+ ảnh trong `dataset/` (15 ảnh/loại). 5-Fold CV xác nhận F1 ~72-74% ổn định qua nhiều lần chia, nhưng đây vẫn là con số đo trên đúng 45 tài liệu sẵn có, chưa kiểm chứng trên dữ liệu độc lập mới. Hướng khắc phục: mở rộng gán nhãn lên hàng trăm ảnh/loại, ưu tiên `Dosage` — loại thực thể yếu nhất nhất quán ở mọi cách đo.
+2.  **Chất lượng OCR trên chữ viết tay/con dấu còn nhiễu.** EasyOCR đôi lúc đọc sai nặng trên đoạn chữ viết tay hoặc bị mờ/dấu mộc đè lên. Hướng khắc phục: thử OCR engine chuyên biệt cho chữ viết tay tiếng Việt, hoặc thêm tiền xử lý ảnh (deskew, khử nhiễu, tăng tương phản) trước OCR.
+3.  **Baseline rule-based còn đơn giản** (chỉ phủ tốt `Lab_Value`/`Patient_Name`). Có thể nâng cấp thành baseline mạnh hơn (CRF, hoặc NER cổ điển không dùng layout) để đối chứng chặt hơn.
+4.  **Chưa có unit test / CI.** Pipeline hiện chạy dưới dạng các script độc lập theo từng bước, chưa có kiểm thử tự động để đảm bảo tính ổn định khi thay đổi code.
+
+---
+*Bản quyền nghiên cứu khoa học thuộc về nhóm tác giả dự án NCKH 2026 — HoangDuyet2005.*
