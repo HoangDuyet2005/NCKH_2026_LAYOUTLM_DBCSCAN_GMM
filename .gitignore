@@ -8,6 +8,7 @@ venv/
 dataset/
 layoutlmv3-medical/
 layoutlmv3-medical-finetuned/
+layoutlmv3-medical-finetuned_backup*/
 runs/
 *.bin
 *.pt
@@ -15,6 +16,9 @@ runs/
 *.pkl
 *.rar
 *.zip
+
+# Logs
+logs/
 
 # System
 .DS_Store
