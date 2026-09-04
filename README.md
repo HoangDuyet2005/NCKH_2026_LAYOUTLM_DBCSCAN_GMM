@@ -1,7 +1,9 @@
 # Hệ Thống Trích Xuất Thông Tin Bệnh Án Y Tế Tự Động
 ### Vietnamese Medical Document AI — EasyOCR + DBSCAN + GMM Routing + LayoutLMv3 (BIO Tagging)
 
-Pipeline Document AI hoàn chỉnh, chuyên biệt cho việc **phân loại và trích xuất thông tin thực thể y tế** (Tên bệnh nhân, Chẩn đoán, Tên thuốc, Liều lượng, Kết quả xét nghiệm) từ ảnh chụp bệnh án, đơn thuốc và phiếu xét nghiệm **tiếng Việt** — đi từ ảnh gốc, qua OCR và định tuyến phân loại không giám sát, tới một mô hình Transformer đa phương thức được fine-tune và đánh giá bằng cross-validation.
+Pipeline Document AI hoàn chỉnh, chuyên biệt cho việc **phân loại và trích xuất thông tin thực thể y tế** (Tên bệnh nhân, Chẩn đoán, Tên thuốc, Liều lượng, Kết quả xét nghiệm) từ ảnh chụp bệnh án, đơn thuốc và phiếu xét nghiệm **tiếng Việt** — đi từ ảnh gốc, qua OCR và định tuyến phân loại tài liệu, tới một mô hình Transformer đa phương thức được fine-tune và đánh giá bằng cross-validation.
+
+> Dự án ban đầu thử định tuyến tài liệu bằng GMM không giám sát (đúng như tên repo) — sau khi đánh giá đúng cách, phát hiện cách này chỉ đạt ~62% accuracy nên đã thay bằng supervised classifier, đạt 99.89%. Toàn bộ hành trình này (thử → phát hiện lỗi → sửa) được giữ nguyên trong repo, xem mục [Bước 3 & 3b](#-hướng-dẫn-vận-hành-chi-tiết-step-by-step-guide) và [Hạn Chế](#-hạn-chế--định-hướng-cải-thiện).
 
 ---
 
@@ -25,17 +27,19 @@ Quy trình xử lý trải qua 6 bước chính từ ảnh gốc tới dữ li�
 graph TD
     A[Ảnh Bệnh Án / Đơn Thuốc Gốc] --> B[Bước 1: OCR bằng EasyOCR]
     B --> C[Bước 2: Sắp Xếp Dòng & Làm Sạch bằng DBSCAN]
-    C --> D[Bước 3: Định Tuyến Phân Loại Tài Liệu bằng GMM + LayoutLMv3 Embedding]
-    D -->|Phân loại xong| E[Bước 4 & 4b: Gán Nhãn Label Studio & Chuẩn Hoá BIO]
+    C --> D[Bước 3: GMM Routing thử nghiệm — phát hiện chỉ 62% accuracy]
+    D -->|Đánh giá lại, sửa root cause| D2[Bước 3b: Supervised Router — 99.89% accuracy, dùng để triển khai]
+    D2 --> E[Bước 4 & 4b: Gán Nhãn Label Studio & Chuẩn Hoá BIO]
     E -->|training_data.json| F[Bước 5: Fine-tune LayoutLMv3 Token Classification]
     F --> F1[Bước 5b: Phân tích per-entity + So sánh Baseline]
     F --> F2[Bước 5c: Đánh giá bằng 5-Fold Cross-Validation]
     F -->|Model đã huấn luyện| G[Bước 6: Pipeline Dự Đoán End-to-End & Hậu Xử Lý]
+    D2 -.router triển khai.-> G
     G --> H[Kết Quả Trích Xuất — JSON Có Cấu Trúc]
 ```
 
 **Điểm nổi bật về mặt kỹ thuật:**
-- **GMM Document Routing**: phân loại tài liệu (Đơn thuốc / Phiếu xét nghiệm / Hồ sơ bệnh án) theo hướng **không giám sát**, dùng Gaussian Mixture Model trên page-level embedding `[CLS]` 768 chiều của LayoutLMv3 — đánh giá bằng train/test hold-out riêng biệt để tránh data leakage.
+- **Document Routing — hành trình sửa lỗi thật**: thử GMM không giám sát trước, đánh giá đúng cách (train/test hold-out, tránh data leakage) phát hiện GMM chỉ đạt ~62% accuracy và thất bại hoàn toàn với 1 loại tài liệu; chẩn đoán nguyên nhân (embedding chưa fine-tune + lãng phí nhãn thật đã có sẵn) → chuyển sang Logistic Regression có giám sát trên embedding đã fine-tune, xác nhận **99.89% ± 0.22% accuracy** qua 5-Fold CV. Xem mục "Bước 3b" bên dưới.
 - **LayoutLMv3 Token Classification**: fine-tune mô hình Transformer đa phương thức (text + layout + hình ảnh) để gán nhãn BIO cho 5 loại thực thể y tế.
 - **Đánh giá bằng 5-Fold Cross-Validation**: không chỉ báo cáo 1 con số F1 trên 1 lần chia dữ liệu — mô hình được đánh giá out-of-fold trên toàn bộ tập gán nhãn để có kết luận thống kê đáng tin cậy hơn (chi tiết ở mục [Kết Quả Đánh Giá](#-kết-quả-đánh-giá-evaluation-results)).
 - **So sánh với baseline rule-based**: định lượng mức độ hữu ích thực sự của việc fine-tune một mô hình đa phương thức so với một cách tiếp cận regex/keyword đơn giản.
@@ -97,7 +101,8 @@ NCKH_Model/
 ├── src/
 │   ├── step1_ocr_extract.py              # Trích xuất OCR tiếng Việt bằng EasyOCR
 │   ├── step2_dbscan_cleaning.py          # Làm sạch nhiễu & sắp xếp dòng bằng DBSCAN
-│   ├── step3_gmm_routing.py              # Định tuyến loại tài liệu bằng GMM + LayoutLMv3 [CLS]
+│   ├── step3_gmm_routing.py              # [Thử nghiệm] Định tuyến bằng GMM -- chỉ 62% accuracy, xem step3b
+│   ├── step3b_supervised_routing.py      # Định tuyến bằng Logistic Regression -- 99.89% accuracy, dùng triển khai
 │   ├── step4_prepare_label_studio.py     # Tạo dữ liệu định dạng Label Studio
 │   ├── step4b_label_studio_to_training.py# Ánh xạ nhãn gán thành cấu trúc BIO
 │   ├── step5_layoutlmv3_finetune.py      # Fine-tune LayoutLMv3 (huấn luyện chính thức)
@@ -144,13 +149,24 @@ Tọa độ OCR của EasyOCR thường xô lệch và trả về dạng từ đ
 python src/step2_dbscan_cleaning.py
 ```
 
-### Bước 3 — Định tuyến phân loại tài liệu (GMM + LayoutLMv3 Embedding)
-Trích xuất page-level embedding `[CLS]` từ LayoutLMv3 pretrained, dùng **Gaussian Mixture Model** để tự động phân loại tài liệu thành 3 nhóm (Đơn thuốc / Phiếu xét nghiệm / Hồ sơ bệnh án).
+### Bước 3 — Định tuyến phân loại tài liệu (GMM, thử nghiệm ban đầu)
+Trích xuất page-level embedding `[CLS]` từ LayoutLMv3 pretrained, dùng **Gaussian Mixture Model** (không giám sát) để tự động phân loại tài liệu thành 3 nhóm (Đơn thuốc / Phiếu xét nghiệm / Hồ sơ bệnh án).
 
-Đánh giá được tách bạch để tránh data leakage: GMM fit và ánh xạ cluster→nhãn **chỉ trên tập train (80%)**, `classification_report` đo **trên tập test hold-out (20%)** mà mô hình chưa từng thấy. Model triển khai cuối cùng (`gmm_router.pkl`) sau đó được refit trên toàn bộ dữ liệu để tận dụng hết dữ liệu sẵn có.
+Đánh giá được tách bạch để tránh data leakage: GMM fit và ánh xạ cluster→nhãn **chỉ trên tập train (80%)**, `classification_report` đo **trên tập test hold-out (20%)** mà mô hình chưa từng thấy.
 ```powershell
 python src/step3_gmm_routing.py
 ```
+
+> ⚠️ Sau khi sửa leakage, số liệu trung thực cho thấy GMM chỉ đạt **~62% accuracy**, thất bại hoàn toàn khi phân biệt `Phiếu xét nghiệm` với `Hồ sơ bệnh án`. Đây là lý do Bước 3b ra đời — xem ngay bên dưới. Bước 3 (GMM) được giữ lại trong repo như minh hoạ kỹ thuật phân cụm không giám sát và làm bài học cụ thể về tầm quan trọng của việc đánh giá đúng cách, **không dùng để triển khai thực tế**.
+
+### Bước 3b — Định tuyến phân loại tài liệu (Supervised Classifier, dùng để triển khai)
+GMM ở Bước 3 bộc lộ 2 vấn đề khi đánh giá trung thực: (1) dùng embedding từ model **pretrained gốc**, chưa đủ đặc trưng phân biệt 2 loại tài liệu có bố cục bảng biểu giống nhau; (2) **nhãn thật đã có sẵn** (tên thư mục trong `dataset/`) nhưng lại dùng phương pháp không giám sát — lãng phí thông tin. Bước 3b khắc phục cả 2: dùng embedding từ model **đã fine-tune** (đồng bộ đúng với những gì Bước 6 dùng lúc dự đoán thật) + **Logistic Regression có giám sát**.
+
+```powershell
+python src/step3b_supervised_routing.py
+```
+
+Kết quả xác nhận bằng 5-Fold CV out-of-fold trên toàn bộ 904 ảnh: **99.89% ± 0.22% accuracy** (so với ~62% của GMM cũ). Router này (`document_router.pkl`) là router chính thức được `step6_inference_postprocessing.py` sử dụng để triển khai.
 
 ### Bước 4 — Chuẩn bị dữ liệu & gán nhãn thủ công (Label Studio)
 ```powershell
@@ -185,7 +201,7 @@ python src/plot_kfold_results.py   # vẽ lại biểu đồ sau khi có kết q
 **Cần GPU, mất khoảng 5-7 tiếng** (huấn luyện 5 model độc lập — đo thực tế trên GPU laptop RTX 3050 6GB). Script tự dọn checkpoint sau mỗi fold để tránh làm đầy ổ đĩa; nên có sẵn ít nhất ~5GB trống trước khi chạy.
 
 ### Bước 6 — Pipeline dự đoán End-to-End & hậu xử lý
-Chạy toàn bộ pipeline tự động (OCR → DBSCAN → GMM → LayoutLMv3) trên 1 ảnh mới. Hậu xử lý heuristic ghép các từ có nhãn BIO liền kề thành cụm từ hoàn chỉnh, xuất kết quả JSON có cấu trúc.
+Chạy toàn bộ pipeline tự động (OCR → DBSCAN → Document Routing [Bước 3b] → LayoutLMv3) trên 1 ảnh mới. Hậu xử lý heuristic ghép các từ có nhãn BIO liền kề thành cụm từ hoàn chỉnh, xuất kết quả JSON có cấu trúc.
 ```powershell
 python src/step6_inference_postprocessing.py
 ```
@@ -261,7 +277,7 @@ python src/plot_kfold_results.py  # biểu đồ 5-Fold CV
 ## ⚠️ Hạn Chế & Định Hướng Cải Thiện
 
 **Đã khắc phục trong quá trình phát triển:**
-- **Đánh giá GMM Router (Bước 3) từng bị data leakage** (fit và eval trên cùng dữ liệu) → đã tách train/test hold-out riêng biệt.
+- **GMM Router (Bước 3) từng bị data leakage khi đánh giá** (fit và eval trên cùng dữ liệu) → tách train/test hold-out riêng biệt. Số liệu trung thực sau đó lộ ra 1 vấn đề nghiêm trọng hơn: GMM thực chất chỉ đạt **~62% accuracy**, thất bại hoàn toàn khi phân biệt `Phiếu xét nghiệm` với `Hồ sơ bệnh án` (0% recall). Nguyên nhân: dùng embedding từ model pretrained gốc (chưa fine-tune, lệch pha với embedding thật dùng lúc inference ở Bước 6), và lãng phí nhãn thật đã có sẵn cho 1 phương pháp không giám sát. → **Bước 3b**: chuyển sang Logistic Regression có giám sát trên embedding đã fine-tune, xác nhận **99.89% ± 0.22% accuracy** qua 5-Fold CV — đây là router chính thức dùng để triển khai.
 - **Chưa có baseline so sánh** → đã bổ sung baseline rule-based (regex/keyword), định lượng được LayoutLMv3 hơn baseline 73.6% vs 11.3% F1 (xem mục Kết Quả).
 - **Dấu hiệu overfitting** (eval loss tăng nhẹ sau Step 500) → đã bổ sung `weight_decay` + `EarlyStoppingCallback`.
 - **Chỉ đánh giá trên 1 lần chia 9 mẫu, độ tin cậy thấp** → đã bổ sung 5-Fold Cross-Validation, đánh giá out-of-fold trên toàn bộ 45 mẫu.

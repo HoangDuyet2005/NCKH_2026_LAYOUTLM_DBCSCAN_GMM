@@ -27,9 +27,16 @@ def clean_text(text: str) -> str:
     """ Dùng Regex làm sạch các ký tự rác ở đầu/cuối chuỗi """
     return re.sub(r'^[\s|\-_,]+|[\s|\-_,]+$', '', text)
 
-def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = None):
+def inference_pipeline(img_path: str, model_path: str = None, router_path: str = None, gmm_path: str = None):
     if model_path is None:
         model_path = str(PROJECT_ROOT / "layoutlmv3-medical-finetuned")
+    # `router_path` (document_router.pkl, src/step3b_supervised_routing.py) là router
+    # chính thức dùng để triển khai -- Logistic Regression có giám sát trên embedding
+    # ĐÃ FINE-TUNE, xác nhận 99.89% +/- 0.22% accuracy qua 5-Fold CV (so với ~62% của
+    # GMM cũ, xem README mục Hạn Chế). `gmm_path` chỉ giữ lại làm phương án dự phòng
+    # nếu router mới chưa tồn tại.
+    if router_path is None:
+        router_path = str(PROJECT_ROOT / "document_router.pkl")
     if gmm_path is None:
         gmm_path = str(PROJECT_ROOT / "gmm_router.pkl")
 
@@ -94,25 +101,38 @@ def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = No
     model.eval()
 
     # ---------------------------------------------------------
-    # 3. GMM Routing (Định tuyến tự động chuẩn kiến trúc: LayoutLMv3 [CLS] 768-D -> GMM)
+    # 3. Document Routing (LayoutLMv3 [CLS] 768-D từ model ĐÃ FINE-TUNE -> Logistic Regression)
     # ---------------------------------------------------------
-    print("2. Chạy GMM Routing (Định tuyến phân loại bằng Gaussian Mixture Model)...")
+    print("2. Chạy Document Routing (định tuyến phân loại tài liệu)...")
     document_type = "Đơn thuốc" # Mặc định dự phòng
 
     try:
         # Chuẩn bị toàn bộ text và bboxes để trích xuất đặc trưng trang
         all_words = [item["text"] for item in final_ocr]
         all_bboxes = [normalize_bbox(item["bbox"], width, height) for item in final_ocr]
-        
+
         page_enc = processor(image, all_words, boxes=all_bboxes, return_tensors="pt", truncation=True, padding="max_length", max_length=512)
         page_enc = {k: v.to(device) for k, v in page_enc.items()}
-        
+
         with torch.no_grad():
             base_output = model.layoutlmv3(**page_enc)
-            # Lấy vector [CLS] 768 chiều đại diện cho toàn bộ trang
+            # Lấy vector [CLS] 768 chiều đại diện cho toàn bộ trang -- LƯU Ý: tính từ
+            # model ĐÃ FINE-TUNE, phải đồng bộ với nguồn embedding lúc fit router
+            # (xem step3b_supervised_routing.py) nếu không sẽ lệch pha.
             cls_embedding = base_output.last_hidden_state[0, 0, :].cpu().numpy().reshape(1, -1)
-            
-        if os.path.exists(gmm_path):
+
+        if os.path.exists(router_path):
+            # Router chính thức: Logistic Regression có giám sát (99.89% +/- 0.22% qua 5-Fold CV)
+            router_data = joblib.load(router_path)
+            clf = router_data["classifier"]
+            class_mapping = router_data.get("class_mapping", {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"})
+            pred_label_id = int(clf.predict(cls_embedding)[0])
+            document_type = class_mapping.get(pred_label_id, "Đơn thuốc")
+        elif os.path.exists(gmm_path):
+            # Phương án dự phòng nếu chưa chạy step3b_supervised_routing.py -- LƯU Ý:
+            # GMM đo được chỉ ~62% accuracy (xem README, mục Hạn Chế), không khuyến
+            # khích dùng cho triển khai thực tế, chỉ giữ để tương thích ngược.
+            print("-> Chưa có document_router.pkl, dùng GMM cũ (kém tin cậy hơn nhiều, ~62% accuracy).")
             router_data = joblib.load(gmm_path)
             if isinstance(router_data, dict):
                 gmm_model = router_data["gmm"]
@@ -122,15 +142,14 @@ def inference_pipeline(img_path: str, model_path: str = None, gmm_path: str = No
                 pred_label_id = c2l.get(pred_cluster, pred_cluster)
                 document_type = class_mapping.get(pred_label_id, "Đơn thuốc")
             else:
-                # Nếu là đối tượng GMM thuần (n_features = 768)
                 pred_cluster = int(router_data.predict(cls_embedding)[0])
                 document_type = {0: "Đơn thuốc", 1: "KQ xét nghiệm", 2: "Hồ sơ bệnh án"}.get(pred_cluster, "Đơn thuốc")
         else:
-            print("-> Chưa có file gmm_router.pkl, dùng phân loại mặc định.")
+            print("-> Chưa có router nào (document_router.pkl / gmm_router.pkl), dùng phân loại mặc định.")
     except Exception as e:
-        print(f"Lỗi khi chạy GMM Router: {e}")
-        
-    print(f"-> Phân loại tài liệu chuẩn GMM: {document_type}")
+        print(f"Lỗi khi chạy Document Router: {e}")
+
+    print(f"-> Phân loại tài liệu: {document_type}")
     
     # ---------------------------------------------------------
     # 4. LayoutLMv3 Token Classification (Trích xuất thực thể theo Chunks)
