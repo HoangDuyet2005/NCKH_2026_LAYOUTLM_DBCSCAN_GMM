@@ -22,10 +22,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # và step5c_kfold_cv.py (out-of-fold). Xem README mục "Phân Tích Chi Tiết".
 ENTITY_LABELS = ["Lab_Value", "Medication", "Diagnosis", "Patient_Name", "Dosage"]
 BASELINE_F1 = [12.1, 0.0, 0.0, 21.1, 0.0]
-SINGLE_SPLIT_F1 = [88.9, 80.0, 58.8, 82.4, 26.7]
+SINGLE_SPLIT_F1 = [100.0, 80.0, 66.7, 70.0, 30.8]  # sau khi retrain với weight_decay + EarlyStopping
 OOF_F1 = [97.9, 76.9, 63.7, 62.5, 44.8]
 
-SINGLE_SPLIT_OVERALL_F1 = 72.00
+SINGLE_SPLIT_OVERALL_F1 = 79.39  # sau khi retrain (Step 500, xem README mục Kết Quả)
 
 
 def main():
