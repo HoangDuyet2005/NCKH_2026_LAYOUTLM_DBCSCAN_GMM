@@ -50,8 +50,8 @@ graph TD
 
 ### 1. Clone dự án
 ```bash
-git clone https://github.com/HoangDuyet2005/NCKH_2026_LAYOUTLM_DBCSCAN_GMM.git
-cd NCKH_2026_LAYOUTLM_DBCSCAN_GMM
+git clone https://github.com/HoangDuyet2005/NCKH_2026_LAYOUTLM_DBSCAN_GMM.git
+cd NCKH_2026_LAYOUTLM_DBSCAN_GMM
 ```
 
 ### 2. Thiết lập môi trường ảo (khuyến khích)
