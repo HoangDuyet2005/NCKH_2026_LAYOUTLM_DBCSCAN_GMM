@@ -91,6 +91,7 @@ Nếu đã có model fine-tune tại `layoutlmv3-medical-finetuned/`, chỉ cầ
 ```bash
 python src/step6_inference_postprocessing.py
 ```
+> `document_router.pkl` và `layoutlmv3-medical-finetuned/` đều bị `.gitignore` (quá nặng để đẩy lên GitHub) — clone repo xong sẽ **chưa có sẵn 2 file/thư mục này**. Nếu thiếu, Bước 6 sẽ tự dùng phân loại mặc định thay vì router thật. Chạy `python src/step3b_supervised_routing.py` (mất ~5 phút, cần `dataset/` và model đã fine-tune) để tạo lại `document_router.pkl` trước khi chạy Bước 6.
 
 ---
 
